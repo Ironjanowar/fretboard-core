@@ -21,9 +21,9 @@ Environment inspected: Linux 6.18 (x86_64), 16 cores, no `sudo`, no `/dev/kvm`.
 | Gradle | `9.8.0` | AGP 9.4 requires Gradle >= 9.6.0; Gradle's matrix supports JVM 17–27 |
 | Kotlin | `2.4.20` | highest stable on Maven Central; Gradle is tested with Kotlin 2.0.0–2.4.20-RC2 |
 | Compose BOM | `2026.09.00` | highest stable on Google's Maven |
-| Android SDK | `cmdline-tools;23.0` (build `16111833`), `platforms;android-37`, `build-tools;36.0.0`, `platform-tools` | `sdkmanager --install` + `--list_installed` |
-| Android NDK | `28.2.13676358` | the AGP 9.4 default revision; installed through `sdkmanager` |
-| compileSdk / targetSdk | `37` | highest stable platform offered by `sdkmanager`; AGP 9.4 supports up to API 37 |
+| Android SDK | `cmdline-tools/latest 23.0.0` (build `16111833`), `platforms/android-37.0`, `build-tools/36.0.0`, `platform-tools 37.0.1`, `ndk/28.2.13676358` | `android sdk install` (the new CLI) + `sdkmanager --list_installed`; packages live in `/workspace/tools/android-sdk` |
+| Android NDK | `28.2.13676358` | the AGP 9.4 default revision; installed through the SDK CLI |
+| compileSdk / targetSdk | `37` (platform package `platforms/android-37.0`) | highest stable platform offered by the SDK CLI; AGP 9.4 supports up to API 37 |
 | minSdk | `29` | User decision 2026-09-28 (DEC-10): Android 10 floor, chosen over the plan's proposal of 26 |
 | cargo-ndk | not selected yet | introduced in task `C05`, where the cross-build script is written |
 | ABIs | `arm64-v8a` only | User decision 2026-09-28: emulator evidence is out of scope here, so `x86_64` is no longer required; the phone's ABI is confirmed by the app itself (see below) |
@@ -35,6 +35,18 @@ Official compatibility sources used for the pins:
 - Gradle compatibility matrix: Gradle runs on JVM 17–27 and is tested with Kotlin
   2.0.0 through 2.4.20-RC2 and AGP 9.0 through 9.5.0-alpha02.
 - crates.io release history for `uniffi` (`0.32.2`).
+
+## Installing SDK packages (observed pitfalls)
+
+- `sdkmanager` is deprecated in cmdline-tools 23.0 and no longer installs the
+  current platform packages: `sdkmanager "platforms;android-37"` fails with
+  "Package platforms/android-37 not found" even though the package is listed.
+  Use the new CLI: `android sdk install "platforms/android-37.0"`.
+- Platform package IDs are now minor-versioned (`platforms/android-37.0`,
+  `platforms/android-36.1`, …), not just `platforms;android-36`.
+- `compileSdk 37` therefore resolves to the installed `platforms/android-37.0`
+  directory; any Gradle configuration that needs a different minor platform
+  version must pin it explicitly instead of assuming `android-37` exists.
 
 ## Environment limitations (blocked, not deferred silently)
 
