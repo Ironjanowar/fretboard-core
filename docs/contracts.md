@@ -55,9 +55,13 @@ binding resolutions, implemented with the C02 tests:
   `binding_package` and a `capabilities` object mapping capability id to boolean,
   empty until C04 freezes the flag set.
 - Deserialisation is strict and validating: unknown fields anywhere in the page
-  are an error, a `tuning` key on a piano instrument is an error, and the state
-  types reject by themselves the same violations `validate_state` rejects, so no
-  code path can build a value the public API could not have built.
+  are an error, a `tuning` key on a piano instrument is an error, a required key
+  that is absent — `highlight`, for example — is a missing-field error rather
+  than a silent `null`, and the state types reject by themselves the same
+  violations `validate_state` rejects. So no *deserialisation* path can build a
+  value the public API could not have built. The state types keep public fields,
+  so a caller can still hand-build such a value; `validate_state` rejects it
+  before it is stored or sent.
 - Error codes for one user mistake are deliberately different by entry point: a
   caller asking for a preset that does not exist for an instrument gets
   `UnknownIdentifier` (a lookup failure), while a committed state whose reference
