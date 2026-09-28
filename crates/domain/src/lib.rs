@@ -21,10 +21,14 @@
 //! [`validate_state`], with the frozen schema examples in
 //! `fixtures/contract/`. `C03` added the note and interval primitives
 //! ([`chromatic_scale`], [`note_index`], [`note_at`], [`interval_name`]) and the
-//! `major` chord ([`chord_details`]); every other chord quality is
-//! [`CoreError::UnsupportedCapability`] until `C06` implements the catalog.
-//! Catalogs, codecs, transitions and derivation arrive in later tasks, each of
-//! them tests first.
+//! first chord quality through the documented C03 handoff. `C06` completed the
+//! chord catalog: all 47 qualities answer with their own formula, display suffix
+//! and contextual interval labels ([`chord_formula`], [`chord_quality_label`],
+//! [`chord_interval_labels`], [`chord_details`]), the eight UI groups
+//! ([`grouped_qualities`]) and the triad/seventh mode inference
+//! ([`infer_chord_mode`], [`ChordMode`]). Instrument presets and scale,
+//! progression, codec, transition, derivation and analyzer support arrive in
+//! later tasks, each of them tests first.
 
 #![forbid(unsafe_code)]
 
@@ -35,7 +39,10 @@ mod note;
 mod state;
 mod types;
 
-pub use chord::{ChordDetails, chord_details};
+pub use chord::{
+    ChordDetails, ChordMode, QualityGroup, chord_details, chord_formula, chord_interval_labels,
+    chord_quality_label, grouped_qualities, infer_chord_mode,
+};
 pub use error::CoreError;
 pub use interval::interval_name;
 pub use note::{chromatic_scale, note_at, note_index};

@@ -30,8 +30,11 @@ use std::fmt;
 /// The variant name *is* the wire code: [`ErrorCode::as_str`] returns exactly
 /// the string a client branches on, so no client parses an English message to
 /// find out what happened. The set matches the domain's stable codes one for
-/// one, including `UnsupportedCapability`, which is how an unimplemented
-/// feature is reported as pending instead of as a plausible wrong answer.
+/// one, including `UnsupportedCapability`: a capability a later task has not
+/// implemented yet reports that explicit pending code instead of masquerading as
+/// an invalid request or answering with a plausible wrong result. The chord
+/// catalog is complete since `C06`, so no chord quality reaches a client through
+/// it any more.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum ErrorCode {
     /// The value is structurally inconsistent.
