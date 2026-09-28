@@ -325,3 +325,120 @@ pub fn object_keys(value: &serde_json::Value) -> BTreeSet<String> {
             .unwrap_or_else(|| panic!("expected an object, got {value}")),
     )
 }
+
+/// Every JSONL record of a fixture file, parsed in file order. A malformed
+/// record fails the test that asked for it instead of being skipped.
+pub fn oracle_records(relative: &str) -> Vec<serde_json::Value> {
+    read_repo_file(relative)
+        .lines()
+        .filter(|line| !line.trim().is_empty())
+        .map(|line| {
+            serde_json::from_str(line)
+                .unwrap_or_else(|error| panic!("{relative} has an invalid record: {error}"))
+        })
+        .collect()
+}
+
+/// The string items of a JSON array field, in order.
+pub fn string_array(value: &serde_json::Value, field: &str) -> Vec<String> {
+    value[field]
+        .as_array()
+        .unwrap_or_else(|| panic!("{field} must be an array in {value}"))
+        .iter()
+        .map(|item| {
+            item.as_str()
+                .unwrap_or_else(|| panic!("every {field} item must be a string"))
+                .to_string()
+        })
+        .collect()
+}
+
+/// One `fixtures/oracle/chords.jsonl` record by case id.
+fn oracle_chord_record(case_id: &str) -> serde_json::Value {
+    oracle_records("fixtures/oracle/chords.jsonl")
+        .into_iter()
+        .find(|record| record["case_id"].as_str() == Some(case_id))
+        .unwrap_or_else(|| panic!("the oracle has no chord record {case_id}"))
+}
+
+/// The notes of one root and quality, from the oracle's `chord_notes`.
+pub fn oracle_chord_notes(root: &str, quality: &str) -> Vec<String> {
+    let record = oracle_chord_record(&format!("chord_notes/{root}:{quality}"));
+    string_array(&record["output"], "notes")
+}
+
+/// The full label of one root and quality, from the oracle's `chord_label`.
+pub fn oracle_chord_label(root: &str, quality: &str) -> String {
+    let record = oracle_chord_record(&format!("chord_label/{root}:{quality}"));
+    record["output"]["label"]
+        .as_str()
+        .expect("chord_label output must carry a label")
+        .to_string()
+}
+
+/// The display/wire suffix of one quality, from the oracle's
+/// `chord_quality_label`.
+pub fn oracle_chord_quality_label(quality: &str) -> String {
+    let record = oracle_chord_record(&format!("chord_quality_label/{quality}"));
+    record["output"]["label"]
+        .as_str()
+        .expect("chord_quality_label output must carry a label")
+        .to_string()
+}
+
+/// The interval labels of one quality, in label order, from the oracle's
+/// `chord_interval_labels`.
+pub fn oracle_chord_interval_labels(quality: &str) -> Vec<String> {
+    let record = oracle_chord_record(&format!("chord_interval_labels/{quality}"));
+    string_array(&record["output"], "interval_labels")
+}
+
+/// The actual zipped (note, interval label) pairs of one root and quality,
+/// from the oracle's `notes_with_intervals`.
+pub fn oracle_chord_interval_pairs(root: &str, quality: &str) -> Vec<(String, String)> {
+    let record = oracle_chord_record(&format!("notes_with_intervals/{root}:{quality}"));
+    record["output"]["pairs"]
+        .as_array()
+        .expect("notes_with_intervals output must carry pairs")
+        .iter()
+        .map(|pair| {
+            let fields = pair["fields"]
+                .as_array()
+                .expect("a pair must carry its fields");
+            (
+                fields
+                    .first()
+                    .expect("a pair has a note")
+                    .as_str()
+                    .expect("the note is a string")
+                    .to_string(),
+                fields
+                    .get(1)
+                    .expect("a pair has an interval label")
+                    .as_str()
+                    .expect("the interval label is a string")
+                    .to_string(),
+            )
+        })
+        .collect()
+}
+
+/// The twelve simple interval names of `Fretboard.Music.Intervals.name/1`, as
+/// `(semitones, name)` pairs in catalog order, from the oracle's
+/// `interval_names`.
+pub fn oracle_interval_names() -> Vec<(u8, String)> {
+    oracle_catalogs()["interval_names"]
+        .as_array()
+        .expect("interval_names must be an array")
+        .iter()
+        .map(|entry| {
+            let semitones = u8::try_from(entry["semitones"].as_u64().expect("a semitone count"))
+                .expect("the semitone count fits in u8");
+            let name = entry["name"]
+                .as_str()
+                .expect("an interval name")
+                .to_string();
+            (semitones, name)
+        })
+        .collect()
+}

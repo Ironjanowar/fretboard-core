@@ -67,6 +67,13 @@ binding resolutions, implemented with the C02 tests:
   `UnknownIdentifier` (a lookup failure), while a committed state whose reference
   does not belong to its instrument is `InvalidState` (a structural violation).
   The adapter maps both to the same user-facing English message.
+- A chord root on a wire surface is one of the twelve sharp names
+  (`C C# D D# E F F# G G# A A# B`). The seven flat aliases (`Db Eb Fb Gb Ab Bb
+  Cb`) widen the domain's note lookup (`note_index`) only — which is how the
+  baseline's `chord_notes/2` resolves them, and what the oracle's flat-root
+  records pin — and are rejected on every wire surface (the adapter DTOs and the
+  snapshot decoder), never rewritten to the sharp equivalent (`CORE-D06`,
+  decided 2026-09-28).
 
 ## Deviations
 
@@ -89,8 +96,17 @@ adapter API in task `C04`; no flag may be invented by a client.
 Every fallible entry point returns a stable error code, never a panic and never a
 raw stack trace: `InvalidState`, `UnknownIdentifier`, `OutOfRange`,
 `InvalidAction`, `InvalidUrl`, `UnsupportedOrigin`, `InputTooLarge`,
-`InvalidSnapshot`, `UnsupportedSchemaVersion`. Concrete resource limits are an
-open decision (DEC-06); until it is approved, limits are not invented in code.
+`InvalidSnapshot`, `UnsupportedSchemaVersion`, and `UnsupportedCapability`.
+
+`UnsupportedCapability` is an addition to the plan's list, made in C03: the plan
+requires a "documented capability/unavailable error" for features a phase has not
+implemented yet, while its error list contained no variant for it. Without one, an
+unimplemented quality would have to masquerade as an invalid action or, worse,
+answer with a wrong chord. It is a pure addition — no existing code changed
+meaning — and it is what keeps an incomplete engine honest: the Android client
+renders an explicit English pending state instead of showing a plausible result.
+Concrete resource limits are an open decision (DEC-06); until it is approved,
+limits are not invented in code.
 
 ## Web URL compatibility
 

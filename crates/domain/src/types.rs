@@ -47,6 +47,14 @@ const MAX_SOUNDING_PITCH: u16 = 151;
 pub struct PitchClass(u8);
 
 impl PitchClass {
+    /// The table-internal constructor for the frozen catalog constants: the
+    /// bound is asserted during const evaluation, so a mistranscribed pitch
+    /// class fails the build instead of becoming a runtime error.
+    pub(crate) const fn from_catalog(value: u8) -> Self {
+        assert!(value < PITCH_CLASS_COUNT, "pitch class out of range");
+        Self(value)
+    }
+
     /// The sharp name of this pitch class.
     pub const fn name(self) -> &'static str {
         // The newtype's invariant is 0..=11, so this index cannot be out of
@@ -82,6 +90,27 @@ impl TryFrom<u8> for PitchClass {
 impl From<PitchClass> for u8 {
     fn from(pitch_class: PitchClass) -> Self {
         pitch_class.0
+    }
+}
+
+impl FromStr for PitchClass {
+    type Err = CoreError;
+
+    /// Parse one of the twelve sharp wire names (`C C# D D# E F F# G G# A A# B`).
+    ///
+    /// This is the wire spelling rule of the contract (`02-core-contract.md`
+    /// section 2, decision `CORE-D06` in `docs/decisions.md`): a wire surface —
+    /// the URL parameters and this adapter's DTOs — carries the sharp names
+    /// only. The seven flat aliases are recognized by the domain's note lookup
+    /// ([`crate::note_index`]) alone, which widens a *lookup* (the baseline's
+    /// `chord_notes/2` uses it) and never a wire value.
+    ///
+    /// # Errors
+    ///
+    /// [`CoreError::UnknownIdentifier`] naming `note` when the value is not one
+    /// of the twelve sharp names.
+    fn from_str(value: &str) -> Result<Self, Self::Err> {
+        Self::from_name(value).ok_or_else(|| CoreError::unknown_identifier("note"))
     }
 }
 
@@ -485,6 +514,18 @@ stable_identifier!(
     canonical_quality_id
 );
 
+impl QualityId {
+    /// The table-internal constructor for the frozen catalog constants.
+    ///
+    /// The value is one of the `fixtures/oracle/catalogs.json` quality
+    /// identifiers; the catalog tables and the accepted-identifier lookup share
+    /// this one list, so a mistyped entry changes both together and is caught by
+    /// the oracle-pinned catalog tests.
+    pub(crate) const fn from_catalog(value: &'static str) -> Self {
+        Self(value)
+    }
+}
+
 catalog_identifier_list!(QualityId, QUALITY_IDS);
 
 stable_identifier!(
@@ -505,7 +546,7 @@ stable_identifier!(
     /// instrument is a validation question (contract section 8).
     PresetName,
     "reference",
-    crate::state::canonical_preset_name
+    crate::instrument_catalog::canonical_preset_name
 );
 
 impl PresetName {

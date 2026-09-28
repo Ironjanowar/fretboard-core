@@ -1,0 +1,18 @@
+# UniFFI generator configuration for the pinned UniFFI version (`CORE-DEC-10`:
+# 0.32.2, one pin for the runtime, the scaffolding macros and the generator CLI).
+#
+# The generated Kotlin lands in this package. The value is frozen with the
+# adapter API in `docs/contracts.md` and in `fixtures/contract/api-v1.json`
+# (`binding_package`); it must not drift, because the Android consumer compiles
+# against exactly this package.
+#
+# Generated bindings remain build outputs: they are produced by `C05` and are
+# never hand-written or committed. In library mode the pinned generator finds
+# this per-crate file through the workspace's cargo metadata, so the Kotlin
+# package below is applied without any flag. (Passing this file to `--config`
+# only prints a deprecation warning: that flag now expects a global config with
+# `[defaults]`/`[crates.<name>]` sections, and the package name is unchanged
+# either way.)
+
+[bindings.kotlin]
+package_name = "dev.ironjanowar.fretboard.core"

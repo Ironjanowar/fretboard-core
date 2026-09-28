@@ -19,271 +19,32 @@
 //! built. The state types have public fields, so a caller can still hand-build
 //! such a value; [`validate_state`] is the entry point that rejects it.
 //!
-//! The instrument catalog tables below are the minimal, literal transcription
-//! of `fixtures/oracle/catalogs.json` that this contract needs (string counts,
-//! named pitch presets, the piano range). The full catalog record — labels,
-//! fret counts, groups — is C07's `instrument_catalog.rs`, which takes over
-//! these tables.
+//! The instrument catalog lives in [`crate::instrument_catalog`] (task C07):
+//! this module asks it for a string count, a named preset or the piano range
+//! instead of keeping a second copy of the frozen tables. Validation asks the
+//! catalog, the catalog owns the numbers.
 
 use serde::de;
 use serde::ser::SerializeMap;
 use serde::{Deserialize, Deserializer, Serialize, Serializer};
 
 use crate::error::CoreError;
+use crate::instrument_catalog::{
+    Instrument, InstrumentKind, fretted_instruments, instrument_kind, instrument_strings,
+    keyboard_pitch_range, named_preset_pitches, preset_pitches,
+};
 use crate::types::{
     Fret, InstrumentId, OpenPitch, PitchClass, PresetName, QualityId, StringIndex, Tab,
 };
 
-/// The inclusive absolute pitch range of the piano keyboard, 36 keys, from the
-/// oracle's `instrument_definitions.piano.pitch_range`.
-const PIANO_PITCH_RANGE: (u8, u8) = (48, 83);
-
-/// The preset a fretted instrument's default state is anchored to (contract
-/// section 6: guitar Standard, reference Standard).
-const GUITAR_STANDARD: PitchPreset =
-    PitchPreset::new("Standard", &pitches([40, 45, 50, 55, 59, 64]));
-
-/// The number of distinct preset names of the frozen catalog: the union of the
-/// four per-instrument preset tables below.
-const PRESET_NAME_COUNT: usize = 13;
-
-/// One named pitch preset: the exact absolute pitch of every physical string,
-/// in physical string order.
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
-struct PitchPreset {
-    name: PresetName,
-    pitches: &'static [OpenPitch],
-}
-
-impl PitchPreset {
-    /// The table-internal constructor: `name` is one of the frozen catalog's
-    /// preset names, and the entry is what makes it a known [`PresetName`].
-    const fn new(name: &'static str, pitches: &'static [OpenPitch]) -> Self {
-        Self {
-            name: PresetName::from_catalog(name),
-            pitches,
-        }
-    }
-
-    /// The committed tuning state of this preset: its exact pitches plus the
-    /// reference every later editing operation is anchored to.
-    fn tuning(self) -> TuningState {
-        TuningState {
-            pitches: self.pitches.to_vec(),
-            reference: self.name,
-        }
-    }
-}
-
-/// One instrument of the frozen catalog: its string count and its named pitch
-/// presets in catalog order. The piano has no strings and no presets.
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
-struct InstrumentDefinition {
-    strings: u8,
-    presets: &'static [PitchPreset],
-}
-
-impl InstrumentDefinition {
-    /// The preset of this instrument with that name, when it has one.
-    fn preset(self, name: PresetName) -> Option<PitchPreset> {
-        self.presets
-            .iter()
-            .copied()
-            .find(|preset| preset.name == name)
-    }
-}
-
-/// The guitar presets, in catalog order.
-const GUITAR_PRESETS: &[PitchPreset] = &[
-    GUITAR_STANDARD,
-    PitchPreset::new("Drop D", &pitches([38, 45, 50, 55, 59, 64])),
-    PitchPreset::new("DADGAD", &pitches([38, 45, 50, 55, 57, 62])),
-    PitchPreset::new("Open G", &pitches([38, 43, 50, 55, 59, 62])),
-    PitchPreset::new("Open D", &pitches([38, 45, 50, 54, 57, 62])),
-    PitchPreset::new("Open E", &pitches([40, 47, 52, 56, 59, 64])),
-    PitchPreset::new("Half Step Down", &pitches([39, 44, 49, 54, 58, 63])),
-    PitchPreset::new("Full Step Down", &pitches([38, 43, 48, 53, 57, 62])),
-    PitchPreset::new("Drop C", &pitches([36, 43, 48, 53, 57, 62])),
-];
-
-/// The bass (4-string) presets, in catalog order.
-const BASS_4_PRESETS: &[PitchPreset] = &[
-    PitchPreset::new("Standard", &pitches([28, 33, 38, 43])),
-    PitchPreset::new("Drop D", &pitches([26, 33, 38, 43])),
-    PitchPreset::new("Half Step Down", &pitches([27, 32, 37, 42])),
-];
-
-/// The bass (5-string) presets, in catalog order.
-const BASS_5_PRESETS: &[PitchPreset] = &[
-    PitchPreset::new("Standard", &pitches([23, 28, 33, 38, 43])),
-    PitchPreset::new("Half Step Down", &pitches([22, 27, 32, 37, 42])),
-    PitchPreset::new("Drop A", &pitches([21, 28, 33, 38, 43])),
-];
-
-/// The ukulele presets, in catalog order. Standard is reentrant.
-const UKELELE_PRESETS: &[PitchPreset] = &[
-    PitchPreset::new("Standard", &pitches([67, 60, 64, 69])),
-    PitchPreset::new("Low G", &pitches([55, 60, 64, 69])),
-    PitchPreset::new("D tuning", &pitches([69, 62, 66, 71])),
-    PitchPreset::new("Baritone", &pitches([50, 55, 59, 64])),
-    PitchPreset::new("Half Step Down", &pitches([66, 59, 63, 68])),
-];
-
-/// The guitar definition. Guitar, bass and ukulele share fret 0..=24.
-const GUITAR: InstrumentDefinition = InstrumentDefinition {
-    strings: 6,
-    presets: GUITAR_PRESETS,
-};
-/// The bass (4-string) definition.
-const BASS_4: InstrumentDefinition = InstrumentDefinition {
-    strings: 4,
-    presets: BASS_4_PRESETS,
-};
-/// The bass (5-string) definition.
-const BASS_5: InstrumentDefinition = InstrumentDefinition {
-    strings: 5,
-    presets: BASS_5_PRESETS,
-};
-/// The ukulele definition.
-const UKELELE: InstrumentDefinition = InstrumentDefinition {
-    strings: 4,
-    presets: UKELELE_PRESETS,
-};
-/// The piano definition: no strings, no presets, a fixed key range.
-const PIANO: InstrumentDefinition = InstrumentDefinition {
-    strings: 0,
-    presets: &[],
-};
-
-/// The frozen catalog record of one instrument.
-const fn definition_of(instrument: InstrumentId) -> InstrumentDefinition {
-    match instrument {
-        InstrumentId::Guitar => GUITAR,
-        InstrumentId::Bass4 => BASS_4,
-        InstrumentId::Bass5 => BASS_5,
-        InstrumentId::Ukelele => UKELELE,
-        InstrumentId::Piano => PIANO,
-    }
-}
-
-/// The canonical catalog string of a preset name, when it is one of the frozen
-/// catalog's preset names. This is the single source of truth for the accepted
-/// [`PresetName`] values.
-pub(crate) fn canonical_preset_name(value: &str) -> Option<&'static str> {
-    [
-        GUITAR_PRESETS,
-        BASS_4_PRESETS,
-        BASS_5_PRESETS,
-        UKELELE_PRESETS,
-    ]
-    .iter()
-    .flat_map(|presets| presets.iter())
-    .map(|preset| preset.name.as_str())
-    .find(|name| *name == value)
-}
-
-/// Compare two strings during const evaluation, where the `PartialEq` operator
-/// is not available.
-///
-/// The loop indexes both byte slices behind an explicit length equality check
-/// and only increments a counter bounded by that length, so
-/// `indexing_slicing` and `arithmetic_side_effects` are allowed here: it is
-/// compile-time table comparison, not runtime arithmetic on caller data.
-#[allow(clippy::indexing_slicing, clippy::arithmetic_side_effects)]
-const fn str_eq(left: &str, right: &str) -> bool {
-    let (left, right) = (left.as_bytes(), right.as_bytes());
-    if left.len() != right.len() {
-        return false;
-    }
-    let mut index = 0;
-    while index < left.len() {
-        if left[index] != right[index] {
-            return false;
-        }
-        index += 1;
-    }
-    true
-}
-
-/// Every distinct preset name of the frozen catalog, in catalog order: the
-/// union of the four per-instrument preset tables with the first occurrence
-/// keeping its place. This is the source of [`PresetName::ALL`], so the
-/// enumerated accepted names and the parsed accepted names cannot drift.
-const DISTINCT_PRESET_NAMES: [PresetName; PRESET_NAME_COUNT] = distinct_preset_names();
-
-/// Collect the distinct preset names of the four preset tables at compile
-/// time, asserting that the frozen catalog still declares exactly thirteen.
-///
-/// Every index is bounded by the length of the table it walks and every counter
-/// is asserted before use, so `indexing_slicing` and `arithmetic_side_effects`
-/// are allowed: this runs during const evaluation over frozen tables, never on
-/// caller input.
-#[allow(clippy::indexing_slicing, clippy::arithmetic_side_effects)]
-const fn distinct_preset_names() -> [PresetName; PRESET_NAME_COUNT] {
-    const TABLES: [&[PitchPreset]; 4] = [
-        GUITAR_PRESETS,
-        BASS_4_PRESETS,
-        BASS_5_PRESETS,
-        UKELELE_PRESETS,
-    ];
-    let mut names = [PresetName::from_catalog(""); PRESET_NAME_COUNT];
-    let mut count = 0;
-    let mut table_index = 0;
-    while table_index < TABLES.len() {
-        let table = TABLES[table_index];
-        let mut preset_index = 0;
-        while preset_index < table.len() {
-            let name = table[preset_index].name;
-            let mut seen = false;
-            let mut scan = 0;
-            while scan < count {
-                if str_eq(names[scan].as_str(), name.as_str()) {
-                    seen = true;
-                    break;
-                }
-                scan += 1;
-            }
-            if !seen {
-                assert!(
-                    count < PRESET_NAME_COUNT,
-                    "more than 13 distinct preset names"
-                );
-                names[count] = name;
-                count += 1;
-            }
-            preset_index += 1;
-        }
-        table_index += 1;
-    }
-    assert!(
-        count == PRESET_NAME_COUNT,
-        "the frozen catalog has 13 distinct preset names"
-    );
-    names
-}
+// The instrument catalog — string counts, named pitch presets, the piano range
+// — lives in `crate::instrument_catalog` since C07. This module asks it instead
+// of keeping a second copy of the frozen tables.
 
 impl PresetName {
     /// Every distinct preset name of the frozen catalog, in catalog order:
     /// [`PresetName::parse`] accepts exactly these names.
-    pub const ALL: [Self; 13] = DISTINCT_PRESET_NAMES;
-}
-
-/// Convert one transcribed pitch table into the typed representation, asserting
-/// every value during const evaluation so a mistyped catalog value fails the
-/// build.
-///
-/// The index is bounded by `COUNT` and every assignment is validated, so
-/// `indexing_slicing` and `arithmetic_side_effects` are allowed here: this is
-/// compile-time table conversion, not runtime arithmetic on user input.
-#[allow(clippy::indexing_slicing, clippy::arithmetic_side_effects)]
-const fn pitches<const COUNT: usize>(values: [u8; COUNT]) -> [OpenPitch; COUNT] {
-    let mut converted = [OpenPitch::from_catalog(0); COUNT];
-    let mut index = 0;
-    while index < COUNT {
-        converted[index] = OpenPitch::from_catalog(values[index]);
-        index += 1;
-    }
-    converted
+    pub const ALL: [Self; 13] = crate::instrument_catalog::DISTINCT_PRESET_NAMES;
 }
 
 /// A chord identity: root plus quality, not the pitch set it names. C6 and
@@ -550,7 +311,7 @@ pub fn default_state() -> PageState {
     PageState {
         instrument: InstrumentState::Fretted {
             instrument: InstrumentId::Guitar,
-            tuning: GUITAR_STANDARD.tuning(),
+            tuning: guitar_standard_tuning(),
             selected: Vec::new(),
         },
         chords: Vec::new(),
@@ -574,13 +335,27 @@ pub fn preset_tuning(
     instrument: InstrumentId,
     name: &PresetName,
 ) -> Result<TuningState, CoreError> {
-    if !instrument.is_fretted() {
+    if instrument_kind(instrument) == InstrumentKind::Keyboard {
         return Err(CoreError::invalid_state("instrument"));
     }
-    definition_of(instrument)
-        .preset(*name)
-        .map(PitchPreset::tuning)
-        .ok_or_else(|| CoreError::unknown_identifier("reference"))
+    Ok(TuningState {
+        pitches: named_preset_pitches(instrument, *name)?.to_vec(),
+        reference: *name,
+    })
+}
+
+/// The committed tuning state of the guitar's Standard preset, which the default
+/// page is anchored to (contract section 6).
+///
+/// The catalog's guitar Standard preset always exists, and the catalog tests pin
+/// it against the oracle; the empty fallback only keeps the function total.
+fn guitar_standard_tuning() -> TuningState {
+    let reference = PresetName::from_catalog("Standard");
+    TuningState {
+        pitches: preset_pitches(InstrumentId::Guitar, reference)
+            .map_or_else(Vec::new, <[OpenPitch]>::to_vec),
+        reference,
+    }
 }
 
 /// Check every invariant the state types cannot express themselves
@@ -618,7 +393,7 @@ fn validate_instrument(instrument: &InstrumentState) -> Result<(), CoreError> {
             // A fretted state may not carry the piano: that is the only
             // representation that could attach a tuning to a keyboard
             // instrument.
-            if !instrument.is_fretted() {
+            if instrument_kind(*instrument) == InstrumentKind::Keyboard {
                 return Err(CoreError::invalid_state("instrument"));
             }
             validate_fretted(*instrument, tuning, selected)
@@ -635,14 +410,14 @@ fn validate_fretted(
     tuning: &TuningState,
     selected: &[Position],
 ) -> Result<(), CoreError> {
-    let definition = definition_of(instrument);
-    if tuning.pitches.len() != usize::from(definition.strings) {
+    let strings = instrument_strings(instrument)?;
+    if tuning.pitches.len() != usize::from(strings) {
         return Err(CoreError::invalid_state("tuning"));
     }
-    if definition.preset(tuning.reference).is_none() {
+    if preset_pitches(instrument, tuning.reference).is_none() {
         return Err(CoreError::invalid_state("reference"));
     }
-    validate_positions(definition, selected)
+    validate_positions(strings, selected)
 }
 
 /// Check a bare [`TuningState`] against the frozen catalog.
@@ -654,20 +429,16 @@ fn validate_fretted(
 /// but not one for a six-string instrument.
 fn validate_unbound_tuning(tuning: &TuningState) -> Result<(), CoreError> {
     let string_count = tuning.pitches.len();
-    let no_fretted_instrument_has_this_many_strings =
-        !InstrumentId::ALL.iter().copied().any(|instrument| {
-            instrument.is_fretted()
-                && usize::from(definition_of(instrument).strings) == string_count
-        });
-    if no_fretted_instrument_has_this_many_strings {
+    let same_arity: Vec<&Instrument> = fretted_instruments()
+        .iter()
+        .filter(|instrument| instrument.strings.map(usize::from) == Some(string_count))
+        .collect();
+    if same_arity.is_empty() {
         return Err(CoreError::invalid_state("tuning"));
     }
-    let reference_belongs_to_a_same_count_instrument =
-        InstrumentId::ALL.iter().copied().any(|instrument| {
-            instrument.is_fretted()
-                && usize::from(definition_of(instrument).strings) == string_count
-                && definition_of(instrument).preset(tuning.reference).is_some()
-        });
+    let reference_belongs_to_a_same_count_instrument = same_arity
+        .iter()
+        .any(|instrument| preset_pitches(instrument.id, tuning.reference).is_some());
     if !reference_belongs_to_a_same_count_instrument {
         return Err(CoreError::invalid_state("reference"));
     }
@@ -676,7 +447,9 @@ fn validate_unbound_tuning(tuning: &TuningState) -> Result<(), CoreError> {
 
 /// Check a piano selection: every key within 48..=83, unique and ascending.
 fn validate_piano_selection(selected: &[OpenPitch]) -> Result<(), CoreError> {
-    let (lowest, highest) = PIANO_PITCH_RANGE;
+    let (lowest, highest) = keyboard_pitch_range();
+    let lowest = u8::from(lowest);
+    let highest = u8::from(highest);
     let mut previous: Option<OpenPitch> = None;
     for pitch in selected {
         let value = u8::from(*pitch);
@@ -694,13 +467,10 @@ fn validate_piano_selection(selected: &[OpenPitch]) -> Result<(), CoreError> {
 /// Check the fretted selection: the string must exist on the instrument, and the
 /// positions must be unique and ascending by physical string (never by pitch;
 /// the ukulele Standard tuning is reentrant).
-fn validate_positions(
-    definition: InstrumentDefinition,
-    selected: &[Position],
-) -> Result<(), CoreError> {
+fn validate_positions(strings: u8, selected: &[Position]) -> Result<(), CoreError> {
     let mut previous: Option<StringIndex> = None;
     for position in selected {
-        if u8::from(position.string) >= definition.strings {
+        if u8::from(position.string) >= strings {
             return Err(CoreError::out_of_range("selection"));
         }
         if previous.is_some_and(|previous| position.string <= previous) {
