@@ -30,6 +30,31 @@ An unpublished contract has no consumers; a published one is never silently
 changed. Breaking changes bump the version, and the Android lock moves in its own
 reviewed change.
 
+## Interface decisions frozen in C02
+
+The plan names the types but not every conversion; these are the coordinator's
+binding resolutions, implemented with the C02 tests:
+
+- Numeric newtypes are constructed with `TryFrom<u8>` (`PitchClass` 0..=11,
+  `OpenPitch` 0..=127, `SoundingPitch` wide enough for 127+24 = 151,
+  `StringIndex`, `Fret` 0..=24); id types use `FromStr` + `Display` with the
+  stable oracle strings.
+- `CoreError`'s variant name is the stable code, with an optional field name, and
+  `CoreError::code()` returns that same string for later FFI use.
+- Structural violations (a fretted state carrying `Piano`, wrong pitch count,
+  duplicate string indices, a highlight absent from the chords) are
+  `InvalidState`; numeric range violations (piano key outside 48..=83, fret above
+  24, open pitch above 127) are `OutOfRange`; unknown id strings are
+  `UnknownIdentifier`.
+- State types derive at least `Debug + Clone + PartialEq`, and the state, chord,
+  tuning, position, instrument, tab and newtype types are serde-serialisable.
+- Snapshot shape: `{"schema_version": 1, "page": {…}}`; the instrument is a
+  tagged object with `kind` (`"fretted"`/`"piano"`) and `id` for both kinds,
+  `tuning {pitches, reference}` only for fretted, `selection` for both. The
+  adapter API file carries `api_version`, `snapshot_schema_version`,
+  `binding_package` and a `capabilities` object mapping capability id to boolean,
+  empty until C04 freezes the flag set.
+
 ## Capability flags
 
 `catalogs()` reports which capabilities this engine build supports, so a client

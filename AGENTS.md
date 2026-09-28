@@ -15,9 +15,10 @@ has no network, storage or UI concern.
   DTOs, conversions, error mapping and the exported API. It must not contain
   musical rules, and it never re-implements domain logic.
 - `crates/bindgen` owns binding generation for the pinned UniFFI version.
-- The domain crate has no third-party dependency, no UniFFI, no JNI, no Android,
-  no Phoenix, no filesystem, no clock and no randomness. Adding a dependency to
-  it requires an approved decision recorded in `docs/decisions.md`.
+- The domain crate depends only on `serde` and `serde_json` (`CORE-D04` in
+  `docs/decisions.md`): no UniFFI, no JNI, no Android, no Phoenix, no filesystem,
+  no clock, no randomness, no network. Any further dependency requires an
+  approved decision recorded in `docs/decisions.md`.
 - Generated bindings and native libraries are build outputs. Never hand-edit or
   commit generated Kotlin, generated Rust scaffolding, or binary artifact
   content; commit the generation command instead.

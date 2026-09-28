@@ -1,6 +1,7 @@
 # Workspace root for the Fretboard native engine.
 # Dependency direction is one way: bindgen and mobile-ffi -> domain. The domain
-# crate has no dependencies at all, by contract.
+# crate's only dependencies are serde and serde_json (decision CORE-D04); it must
+# never gain a platform, IO or binding dependency.
 [workspace]
 resolver = "3"
 members = ["crates/domain", "crates/mobile-ffi", "crates/bindgen"]
