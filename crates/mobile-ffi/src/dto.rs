@@ -262,6 +262,9 @@ impl std::error::Error for AdapterError {}
 #[derive(Debug, Clone, PartialEq, Eq, uniffi::Record)]
 pub struct ChordDto {
     /// The chord root as a note name, e.g. `C#`.
+    ///
+    /// The wire spelling is one of the twelve sharp names; the flat aliases are
+    /// a domain lookup and are rejected here (`CORE-D06`).
     pub root: String,
     /// The chord quality identifier, e.g. `major`.
     pub quality: String,

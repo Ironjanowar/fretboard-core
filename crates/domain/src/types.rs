@@ -93,6 +93,27 @@ impl From<PitchClass> for u8 {
     }
 }
 
+impl FromStr for PitchClass {
+    type Err = CoreError;
+
+    /// Parse one of the twelve sharp wire names (`C C# D D# E F F# G G# A A# B`).
+    ///
+    /// This is the wire spelling rule of the contract (`02-core-contract.md`
+    /// section 2, decision `CORE-D06` in `docs/decisions.md`): a wire surface —
+    /// the URL parameters and this adapter's DTOs — carries the sharp names
+    /// only. The seven flat aliases are recognized by the domain's note lookup
+    /// ([`crate::note_index`]) alone, which widens a *lookup* (the baseline's
+    /// `chord_notes/2` uses it) and never a wire value.
+    ///
+    /// # Errors
+    ///
+    /// [`CoreError::UnknownIdentifier`] naming `note` when the value is not one
+    /// of the twelve sharp names.
+    fn from_str(value: &str) -> Result<Self, Self::Err> {
+        Self::from_name(value).ok_or_else(|| CoreError::unknown_identifier("note"))
+    }
+}
+
 impl Serialize for PitchClass {
     fn serialize<S>(&self, serializer: S) -> Result<S::Ok, S::Error>
     where
