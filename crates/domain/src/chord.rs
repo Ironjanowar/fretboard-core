@@ -490,6 +490,20 @@ pub fn chord_formula(quality: QualityId) -> &'static [u8] {
     catalog_quality(quality).formula
 }
 
+/// The quality whose display label is `label`, when the catalog has one.
+///
+/// The chord tokens on the wire carry the *label* (`Cmaj`, `F#7`), not the
+/// identifier, so the params codec (`C08`) needs this reverse lookup. Labels are
+/// unique across the frozen catalog — `tests/chord_catalog.rs` pins that — so the
+/// lookup is unambiguous.
+#[must_use]
+pub fn quality_from_label(label: &str) -> Option<QualityId> {
+    CATALOG
+        .iter()
+        .find(|quality| quality.suffix == label)
+        .map(|quality| QualityId::from_catalog(quality.id))
+}
+
 /// The display/wire suffix of a catalog quality, e.g. `maj` or `7sus`.
 pub fn chord_quality_label(quality: QualityId) -> &'static str {
     catalog_quality(quality).suffix

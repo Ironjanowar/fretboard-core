@@ -31,8 +31,11 @@
 //! [`instrument_strings`], [`instrument_frets`], [`keyboard_pitch_range`],
 //! [`pitch_presets`], [`preset_pitches`], [`standard_pitches`],
 //! [`standard_tuning_notes`], [`tuning_presets`] and the guitar note-name
-//! aliases). Scale, progression, codec, transition, derivation and analyzer
-//! support arrive in later tasks, each of them tests first.
+//! aliases). `C08` added the page-params codec: [`decode_page_params`],
+//! [`encode_page_params`] and the baseline's decoded form ([`decoded_page`]) for
+//! every current page field, plus [`quality_from_label`], the wire-label lookup
+//! its chord tokens need. Scale, progression, transition, derivation and
+//! analyzer support arrive in later tasks, each of them tests first.
 
 #![forbid(unsafe_code)]
 
@@ -41,12 +44,13 @@ mod error;
 mod instrument_catalog;
 mod interval;
 mod note;
+mod page_params;
 mod state;
 mod types;
 
 pub use chord::{
     ChordDetails, ChordMode, QualityGroup, chord_details, chord_formula, chord_interval_labels,
-    chord_quality_label, grouped_qualities, infer_chord_mode,
+    chord_quality_label, grouped_qualities, infer_chord_mode, quality_from_label,
 };
 pub use error::CoreError;
 pub use instrument_catalog::{
@@ -57,6 +61,7 @@ pub use instrument_catalog::{
 };
 pub use interval::interval_name;
 pub use note::{chromatic_scale, note_at, note_index};
+pub use page_params::{decode_page_params, decoded_page, encode_page_params};
 pub use state::{
     ChordSpec, InstrumentState, PageState, Position, TuningState, default_state, preset_tuning,
     validate_state,
