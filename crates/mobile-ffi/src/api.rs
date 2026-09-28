@@ -57,10 +57,11 @@ pub fn validate_state(state: PageStateDto) -> Result<PageStateDto, AdapterError>
 /// # Errors
 ///
 /// [`AdapterError`] with the domain's stable code: `UnknownIdentifier` when the
-/// root or the quality is not a frozen catalog identifier, and
-/// `UnsupportedCapability` when the quality is a known catalog quality this
-/// build does not implement yet — an explicit pending state, never a plausible
-/// wrong chord and never `InvalidAction`.
+/// root is not a note name or the quality is not a frozen catalog identifier.
+/// The signature keeps the typed failure because the contract carries a code
+/// across the boundary; since `C06` implements the whole chord catalog, no
+/// quality is pending any more, so `UnsupportedCapability` is reserved for the
+/// capabilities a later task adds — never a plausible wrong chord.
 #[uniffi::export]
 pub fn chord_details(chord: ChordDto) -> Result<ChordDetailsDto, AdapterError> {
     let spec = chord_from_dto(&chord)?;

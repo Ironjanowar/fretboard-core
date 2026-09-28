@@ -13,10 +13,10 @@
 //!
 //! These tests pin the adapter's own typed DTOs and entry points from
 //! `02-core-contract.md` section 8 and `04-core-phases.md` task C04: the
-//! `default_state` projection, `chord_details`, the instrument/tab wire
-//! conversions, ordered occurrence lists, a `None` highlight, the frozen
-//! `UnsupportedCapability` pending result for an unimplemented quality, and
-//! typed errors carrying the domain's stable code.
+//! `default_state` projection, `chord_details` against the frozen chord oracle,
+//! the instrument/tab wire conversions, ordered occurrence lists, a `None`
+//! highlight, the error mapping of every domain variant, and typed errors
+//! carrying the domain's stable code.
 //!
 //! The FFI boundary dictates the shape: `UniFFI` 0.32.2 derives its error type
 //! only from an enum, so `AdapterError` is an enum and its code, message and
@@ -40,6 +40,7 @@
 
 use std::path::{Path, PathBuf};
 
+use fretboard_core::CoreError;
 use fretboard_mobile_ffi::{
     AdapterError, ChordDetailsDto, ChordDto, ErrorCode, InstrumentDto, InstrumentStateDto,
     PageStateDto, PositionDto, TabDto, TuningDto, chord_details, default_state, validate_state,
@@ -366,16 +367,47 @@ fn chord_details_rejects_an_unknown_quality_string() {
 }
 
 #[test]
-fn chord_details_reports_an_unimplemented_quality_as_unsupported_capability() {
-    // `min7`, `sus4` and `dim` are real catalog identifiers, but P1 implements
-    // only `major`. They must report a capability error so the client renders an
-    // explicit pending state instead of a plausible wrong chord.
-    for unimplemented in ["min7", "sus4", "dim", "7", "maj7"] {
-        assert_error_code(
-            chord_details(chord("C", unimplemented)).map(|_| ()),
-            ErrorCode::UnsupportedCapability,
+fn chord_details_answers_every_catalog_quality_from_the_oracle() {
+    // C06 completed the domain chord catalog, so the pending-quality path this
+    // adapter test used to pin is gone: a real catalog identifier answers, and
+    // its answer is the frozen oracle's, not a plausible wrong chord.
+    for implemented in ["min7", "sus4", "dim", "7", "maj7", "13", "susb9", "m_add9"] {
+        let details = chord_details(chord("C", implemented))
+            .unwrap_or_else(|error| panic!("{implemented} is implemented since C06: {error:?}"));
+        assert_eq!(
+            details.notes,
+            oracle_chord_notes("C", implemented),
+            "the notes of C {implemented}"
         );
+        assert_eq!(
+            details.label,
+            oracle_chord_label("C", implemented),
+            "the label of C {implemented}"
+        );
+        assert_eq!(details.quality, implemented, "the quality identity");
     }
+}
+
+#[test]
+fn a_catalog_quality_is_never_reported_as_pending() {
+    // The `UnsupportedCapability` code stays in the frozen contract for the
+    // capabilities later tasks add, but no catalog quality may reach the client
+    // through it any more, and none of the codes it used to be confused with.
+    for implemented in ["min7", "sus4", "dim", "7", "maj7"] {
+        match chord_details(chord("C", implemented)) {
+            Ok(_) => {}
+            Err(error) => panic!("{implemented} must answer, got {error:?}"),
+        }
+    }
+
+    // The code is still the one the domain raises for a capability this build
+    // lacks, and the mapping still keeps it distinct: a pending capability is
+    // neither a malformed request nor an inconsistent state.
+    let error = AdapterError::from(CoreError::unsupported_capability("capability"));
+    assert_eq!(error.code(), ErrorCode::UnsupportedCapability);
+    assert_ne!(error.code(), ErrorCode::InvalidAction);
+    assert_ne!(error.code(), ErrorCode::InvalidState);
+    assert_ne!(error.code(), ErrorCode::UnknownIdentifier);
 }
 
 // ---------------------------------------------------------------------------
@@ -708,16 +740,65 @@ fn every_adapter_error_variant_reports_its_matching_code() {
 }
 
 #[test]
-fn an_unimplemented_quality_is_not_reported_as_an_invalid_action() {
-    // Guard the capability code specifically: a pending capability is neither a
-    // malformed request nor an empty musical answer, so it must not surface as
-    // `InvalidAction` or `InvalidState`.
-    let error = assert_error_code(
-        chord_details(chord("C", "min7")).map(|_| ()),
-        ErrorCode::UnsupportedCapability,
+fn every_domain_error_variant_maps_to_its_own_adapter_code() {
+    // The entry points can only raise a few of the ten codes, so the five with
+    // no reachable path (`InvalidUrl`, `UnsupportedOrigin`, `InputTooLarge`,
+    // `InvalidSnapshot`, `UnsupportedSchemaVersion`) are pinned here through the
+    // mapping itself. A mis-mapped arm — `InvalidUrl` surfacing as
+    // `UnsupportedOrigin`, say — passes every entry-point test otherwise.
+    let cases = [
+        (CoreError::InvalidState(None), ErrorCode::InvalidState),
+        (
+            CoreError::UnknownIdentifier(None),
+            ErrorCode::UnknownIdentifier,
+        ),
+        (CoreError::OutOfRange(None), ErrorCode::OutOfRange),
+        (CoreError::InvalidAction(None), ErrorCode::InvalidAction),
+        (CoreError::InvalidUrl(None), ErrorCode::InvalidUrl),
+        (
+            CoreError::UnsupportedOrigin(None),
+            ErrorCode::UnsupportedOrigin,
+        ),
+        (CoreError::InputTooLarge(None), ErrorCode::InputTooLarge),
+        (CoreError::InvalidSnapshot(None), ErrorCode::InvalidSnapshot),
+        (
+            CoreError::UnsupportedSchemaVersion(None),
+            ErrorCode::UnsupportedSchemaVersion,
+        ),
+        (
+            CoreError::UnsupportedCapability(None),
+            ErrorCode::UnsupportedCapability,
+        ),
+    ];
+    assert_eq!(cases.len(), 10, "every domain error variant is covered");
+
+    for (domain_error, expected) in cases {
+        let error = AdapterError::from(domain_error);
+        assert_eq!(
+            error.code(),
+            expected,
+            "the mapped code of a domain error must be its own"
+        );
+        assert!(
+            !error.message().is_empty(),
+            "a mapped error must carry an English message"
+        );
+    }
+}
+
+#[test]
+fn a_domain_error_keeps_its_field_name_as_diagnostic_detail() {
+    let error = AdapterError::from(CoreError::invalid_state("highlight"));
+    assert_eq!(error.code(), ErrorCode::InvalidState);
+    assert_eq!(
+        error.field(),
+        Some("highlight"),
+        "the domain's field name must survive the mapping"
     );
-    assert_ne!(error.code(), ErrorCode::InvalidAction);
-    assert_ne!(error.code(), ErrorCode::InvalidState);
+    assert!(
+        error.message().contains("highlight"),
+        "the domain's own sentence must survive the mapping: {error}"
+    );
 }
 
 // ---------------------------------------------------------------------------

@@ -485,6 +485,18 @@ stable_identifier!(
     canonical_quality_id
 );
 
+impl QualityId {
+    /// The table-internal constructor for the frozen catalog constants.
+    ///
+    /// The value is one of the `fixtures/oracle/catalogs.json` quality
+    /// identifiers; the catalog tables and the accepted-identifier lookup share
+    /// this one list, so a mistyped entry changes both together and is caught by
+    /// the oracle-pinned catalog tests.
+    pub(crate) const fn from_catalog(value: &'static str) -> Self {
+        Self(value)
+    }
+}
+
 catalog_identifier_list!(QualityId, QUALITY_IDS);
 
 stable_identifier!(

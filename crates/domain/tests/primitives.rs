@@ -41,9 +41,11 @@
 //!     `notes: Vec<PitchClass>` in formula order and
 //!     `intervals: Vec<&'static str>` in label order.
 //!
-//! P1 implements only the `major` quality; every other catalog quality must
-//! report a documented unimplemented-capability error rather than an empty or
-//! wrong chord.
+//! The note, interval and chord surfaces are pinned against the frozen oracle
+//! (`fixtures/oracle/catalogs.json` and `fixtures/oracle/chords.jsonl`). The
+//! chord catalog is complete since `C06`: every one of the 47 catalog qualities
+//! answers with its own chord, and `tests/chord_catalog.rs` owns the full
+//! catalog, group and mode coverage.
 //!
 //! First observation for C03 is the expected failure to compile: the note,
 //! interval and chord entry points below do not exist yet.
@@ -431,18 +433,14 @@ fn major_chord_details_match_the_frozen_oracle_for_every_root() {
 }
 
 #[test]
-fn an_unimplemented_quality_reports_a_documented_error() {
-    // Coordinator resolution of the ambiguity the C03 report raised: the
-    // contract now carries `CoreError::UnsupportedCapability` (`CORE-D05`,
-    // documented in `docs/contracts.md`), so an unimplemented quality reports
-    // that code instead of masquerading as an invalid action. The behaviour
-    // pinned here is unchanged: an error, never an empty chord presented as
-    // success.
-    //
-    // P1 implements `major` only. Every other quality in the frozen catalog —
-    // read from the fixture, not retyped — must report the documented error. An
-    // implementation like `match quality { "major" | "minor" => …, _ =>
-    // major_formula }` that answers `Cmaj` for one of these is caught here.
+fn every_catalog_quality_answers_with_its_own_chord() {
+    // C03 reached this file through the documented handoff, which authorized
+    // exactly one quality (`major`) and reported the rest as
+    // `CoreError::UnsupportedCapability` (`CORE-D05`). `C06` completes the
+    // catalog, so that pending state is over: every quality of the frozen
+    // catalog — read from the fixture, not retyped — must answer, and its answer
+    // must be the oracle's. An implementation that leaves one quality pending,
+    // or that answers one with another quality's chord, is caught here.
     let ids = quality_ids();
     assert!(
         ids.iter().any(|id| id == "major"),
@@ -450,23 +448,29 @@ fn an_unimplemented_quality_reports_a_documented_error() {
     );
 
     let mut checked = 0_usize;
-    for id in ids.iter().filter(|id| id.as_str() != "major") {
-        let spec = chord(0, id);
-        match chord_details(&spec) {
-            Ok(details) => panic!(
-                "{id} is not implemented in P1 and must not answer, got a chord: {details:?}"
-            ),
-            Err(error) => assert_eq!(
-                error.code(),
-                "UnsupportedCapability",
-                "the unimplemented quality {id} must report a documented error, got {error:?}"
-            ),
-        }
+    for id in &ids {
+        let details = chord_details(&chord(0, id))
+            .unwrap_or_else(|error| panic!("{id} must be implemented since C06: {error:?}"));
+        let notes: Vec<&str> = details.notes.iter().map(|note| note.name()).collect();
+        assert_eq!(notes, oracle_chord_notes("C", id), "the notes of C {id}");
+        assert_eq!(
+            details.label,
+            oracle_chord_label("C", id),
+            "the label of C {id}"
+        );
+        assert_eq!(details.quality.as_str(), id, "the identity of C {id}");
         checked = checked.saturating_add(1);
     }
     assert_eq!(
         checked,
-        ids.len() - 1,
-        "every catalog quality except major must be exercised"
+        ids.len(),
+        "every catalog quality must be exercised"
     );
+
+    // A quality is not a synonym for another: the same root with two different
+    // formulas must not produce the same notes.
+    let major = chord_details(&chord(0, "major")).expect("major");
+    let minor = chord_details(&chord(0, "minor")).expect("minor");
+    assert_ne!(major.notes, minor.notes, "C major and C minor differ");
+    assert_ne!(major.label, minor.label, "C major and C minor differ");
 }
