@@ -1,0 +1,6 @@
+{
+  "api_version": 1,
+  "snapshot_schema_version": 1,
+  "binding_package": "dev.ironjanowar.fretboard.core",
+  "capabilities": {}
+}

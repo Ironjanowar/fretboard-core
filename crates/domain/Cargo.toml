@@ -4,11 +4,24 @@ description = "Portable music domain for Fretboard: catalogs, canonical state, c
 version.workspace = true
 edition.workspace = true
 rust-version.workspace = true
+license.workspace = true
+repository.workspace = true
+keywords.workspace = true
+categories.workspace = true
+readme.workspace = true
+
 
 [lib]
 name = "fretboard_core"
 path = "src/lib.rs"
 
-# Intentionally empty: the domain crate is pure. Musical behavior, catalogs and
-# codecs are implemented here from the frozen oracle fixtures.
+# Data-only JSON support, approved by `CORE-D04` in `docs/decisions.md`: the
+# snapshot and the page-parameter codecs live in the domain, so serde and
+# serde_json are the domain's only dependencies. No UniFFI, Android, JNI,
+# platform, filesystem, clock, randomness or network crate belongs here.
 [dependencies]
+serde = { version = "1", features = ["derive"] }
+serde_json = "1"
+
+[lints]
+workspace = true

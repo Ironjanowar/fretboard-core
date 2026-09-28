@@ -1,6 +1,7 @@
 # Workspace root for the Fretboard native engine.
 # Dependency direction is one way: bindgen and mobile-ffi -> domain. The domain
-# crate has no dependencies at all, by contract.
+# crate's only dependencies are serde and serde_json (decision CORE-D04); it must
+# never gain a platform, IO or binding dependency.
 [workspace]
 resolver = "3"
 members = ["crates/domain", "crates/mobile-ffi", "crates/bindgen"]
@@ -10,8 +11,75 @@ version = "0.1.0"
 edition = "2024"
 rust-version = "1.98"
 license = "MIT"
+repository = "https://github.com/Ironjanowar/fretboard-core"
+readme = "README.md"
+keywords = ["music", "guitar", "chords", "ffi"]
+categories = ["multimedia::audio", "api-bindings"]
 
 [workspace.dependencies]
 fretboard-core = { path = "crates/domain" }
 # One pin for the runtime, the scaffolding macros and the generator CLI.
 uniffi = "=0.32.2"
+
+# The domain does pitch arithmetic on small integers; a wrap-around in release
+# would be a silent musical defect, so overflow is checked in every profile.
+[profile.release]
+overflow-checks = true
+
+# Static-analysis policy. Every crate opts in with `[lints] workspace = true`, so
+# a crate cannot quietly relax the rules and new crates inherit them.
+#
+# Priority notes: the group entries use a negative priority so the individual
+# entries below them win; the `allow` entries at the end are deliberate
+# exceptions, each with the reason it exists.
+[workspace.lints.rust]
+unsafe_code = "forbid"
+missing_docs = "warn"
+missing_debug_implementations = "warn"
+unreachable_pub = "warn"
+unused_qualifications = "warn"
+elided_lifetimes_in_paths = "warn"
+trivial_casts = "warn"
+trivial_numeric_casts = "warn"
+unused_lifetimes = "warn"
+single_use_lifetimes = "warn"
+variant_size_differences = "warn"
+non_ascii_idents = "warn"
+let_underscore_drop = "warn"
+macro_use_extern_crate = "warn"
+unused_macro_rules = "warn"
+unexpected_cfgs = { level = "warn", check-cfg = ['cfg(tarpaulin_include)'] }
+rust_2018_idioms = { level = "warn", priority = -1 }
+
+[workspace.lints.clippy]
+all = { level = "warn", priority = -1 }
+cargo = { level = "warn", priority = -1 }
+pedantic = { level = "warn", priority = -1 }
+nursery = { level = "warn", priority = -1 }
+
+# Restriction lints this project wants on top of the standard groups.
+unwrap_used = "warn"
+expect_used = "warn"
+panic = "warn"
+indexing_slicing = "warn"
+arithmetic_side_effects = "warn"
+missing_errors_doc = "warn"
+missing_panics_doc = "warn"
+dbg_macro = "warn"
+todo = "warn"
+unimplemented = "warn"
+unreachable = "warn"
+print_stdout = "warn"
+print_stderr = "warn"
+exit = "warn"
+mem_forget = "warn"
+undocumented_unsafe_blocks = "warn"
+same_name_method = "warn"
+
+# Deliberate exceptions.
+module_name_repetitions = "allow"   # `fretboard_core::PageState` style names read better with the domain word repeated
+must_use_candidate = "allow"        # the domain is a library of pure functions; every call is already explicit
+doc_markdown = "allow"              # prose backtick rules add noise without catching defects
+missing_docs_in_private_items = "allow"  # module docs carry the explanation; private helpers stay short
+multiple_crate_versions = "allow"   # `uniffi` (a pinned upstream dependency) pulls both syn 2 and syn 3; not ours to fix
+redundant_pub_crate = "allow"       # conflicts with rustc's `unreachable_pub`: crate-internal items in private modules stay `pub(crate)`

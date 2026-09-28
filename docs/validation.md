@@ -7,7 +7,7 @@ and no gate is marked green from a plan document.
 
 | Phase | Scope | Gate evidence | Status |
 |---|---|---|---|
-| P0 | Toolchains locked, contracts frozen, oracle fixtures exported, provenance recorded | Toolchain ledger; frozen fixtures with manifest and hashes; typed state contract tests green; independent review | in progress (C00 done, C01/C02 open) |
+| P0 | Toolchains locked, contracts frozen, oracle fixtures exported, provenance recorded | Toolchain ledger; frozen fixtures with manifest and hashes; typed state contract tests green; independent review | in progress (C00 done, C01 fixtures frozen, C02 open) |
 | P1 | Minimal real vertical slice: Compose → generated UniFFI → Rust calculation, offline APK | Signed APK published as a release candidate, installed by hand on the phone, airplane mode, native loading proven; the app displays its own API level and ABIs for the device record; emulator coverage is out of scope and disclosed (no `/dev/kvm`) | not started |
 | P2 | All chord qualities, all instrument visualizers, duplicate identity | APK gate: quality selector, visualizers, chip interval behavior, duplicate highlight/remove, rotation | not started |
 | P3 | Absolute tuning edits and the fretted analyzer | APK gate: four fretted analyzers, tuning Apply/Cancel, Low G vs Standard, inversions and missing-note policy | not started |

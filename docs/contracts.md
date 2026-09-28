@@ -30,6 +30,53 @@ An unpublished contract has no consumers; a published one is never silently
 changed. Breaking changes bump the version, and the Android lock moves in its own
 reviewed change.
 
+## Interface decisions frozen in C02
+
+The plan names the types but not every conversion; these are the coordinator's
+binding resolutions, implemented with the C02 tests:
+
+- Numeric newtypes are constructed with `TryFrom<u8>` (`PitchClass` 0..=11,
+  `OpenPitch` 0..=127, `SoundingPitch` wide enough for 127+24 = 151,
+  `StringIndex`, `Fret` 0..=24); id types use `FromStr` + `Display` with the
+  stable oracle strings.
+- `CoreError`'s variant name is the stable code, with an optional field name, and
+  `CoreError::code()` returns that same string for later FFI use.
+- Structural violations (a fretted state carrying `Piano`, wrong pitch count,
+  duplicate string indices, a highlight absent from the chords) are
+  `InvalidState`; numeric range violations (piano key outside 48..=83, fret above
+  24, open pitch above 127) are `OutOfRange`; unknown id strings are
+  `UnknownIdentifier`.
+- State types derive at least `Debug + Clone + PartialEq`, and the state, chord,
+  tuning, position, instrument, tab and newtype types are serde-serialisable.
+- Snapshot shape: `{"schema_version": 1, "page": {…}}`; the instrument is a
+  tagged object with `kind` (`"fretted"`/`"piano"`) and `id` for both kinds,
+  `tuning {pitches, reference}` only for fretted, `selection` for both. The
+  adapter API file carries `api_version`, `snapshot_schema_version`,
+  `binding_package` and a `capabilities` object mapping capability id to boolean,
+  empty until C04 freezes the flag set.
+- Deserialisation is strict and validating: unknown fields anywhere in the page
+  are an error, a `tuning` key on a piano instrument is an error, a required key
+  that is absent — `highlight`, for example — is a missing-field error rather
+  than a silent `null`, and the state types reject by themselves the same
+  violations `validate_state` rejects. So no *deserialisation* path can build a
+  value the public API could not have built. The state types keep public fields,
+  so a caller can still hand-build such a value; `validate_state` rejects it
+  before it is stored or sent.
+- Error codes for one user mistake are deliberately different by entry point: a
+  caller asking for a preset that does not exist for an instrument gets
+  `UnknownIdentifier` (a lookup failure), while a committed state whose reference
+  does not belong to its instrument is `InvalidState` (a structural violation).
+  The adapter maps both to the same user-facing English message.
+
+## Deviations
+
+`fixtures/contract/approved-deviations.json` is the approval ledger for
+deliberate departures from the frozen baseline. It carries a schema version and
+an `approved_deviations` list; an empty list is valid and is the current state.
+Each entry must cite the decision ID, the baseline case ID, the old and the new
+output, the reason and the phase that approved it. A discrepancy is never
+resolved by regenerating a fixture from the implementation under test.
+
 ## Capability flags
 
 `catalogs()` reports which capabilities this engine build supports, so a client
