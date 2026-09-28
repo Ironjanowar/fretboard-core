@@ -1,0 +1,16 @@
+# Rust build output
+/target/
+
+# Generated Android build tree and local SDK path
+/android/.gradle/
+/android/local.properties
+/android/build/
+/android/engine/build/
+
+# Release staging and downloaded engine artifacts
+/dist/
+/vendor/
+
+# Editor and OS noise
+.DS_Store
+*.swp

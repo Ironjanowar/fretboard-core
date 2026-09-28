@@ -1,0 +1,16 @@
+# Workspace root for the Fretboard native engine.
+# Dependency direction is one way: bindgen and mobile-ffi -> domain. The domain
+# crate has no dependencies at all, by contract.
+[workspace]
+resolver = "3"
+members = ["crates/domain", "crates/mobile-ffi", "crates/bindgen"]
+
+[workspace.package]
+version = "0.1.0"
+edition = "2024"
+rust-version = "1.98"
+
+[workspace.dependencies]
+fretboard-core = { path = "crates/domain" }
+# One pin for the runtime, the scaffolding macros and the generator CLI.
+uniffi = "=0.32.2"

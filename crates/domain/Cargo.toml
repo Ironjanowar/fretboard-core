@@ -1,0 +1,14 @@
+[package]
+name = "fretboard-core"
+description = "Portable music domain for Fretboard: catalogs, canonical state, codecs and derivation."
+version.workspace = true
+edition.workspace = true
+rust-version.workspace = true
+
+[lib]
+name = "fretboard_core"
+path = "src/lib.rs"
+
+# Intentionally empty: the domain crate is pure. Musical behavior, catalogs and
+# codecs are implemented here from the frozen oracle fixtures.
+[dependencies]
