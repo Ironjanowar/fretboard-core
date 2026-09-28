@@ -8,6 +8,36 @@ still need the user's word. Decisions that change a contract are recorded in
 Status: work in progress — the target is the first signed APK the user can
 install (the plan's P1 gate).
 
+## Where the APK work stands
+
+Core side is done and merged into `p1/primitives`: C06, C07, `CORE-D06`, C05.
+
+* Engine artifact (build output, not committed):
+  `fretboard-engine-0.1.0.aar`, sha256
+  `1815dd281a558a636c16f99044b97e608a9057775395345c80d11c7a1768a38e`, with
+  `jni/arm64-v8a/libfretboard_mobile_ffi.so` (ELF aarch64), 117 compiled binding
+  classes and `source_commit` = `39f10d7`. Built by `scripts/build_aar.sh` and
+  accepted by `scripts/check_aar.py`.
+* Toolchain verified in this environment: JDK 21.0.2, Android SDK with
+  `platforms/android-37.0` and build-tools 36.0.0, NDK 28.2.13676358, Gradle
+  9.8.0, Kotlin 2.4.20, cargo-ndk 4.1.2, JNA 5.17.0. All outside the
+  repositories, under `/workspace/tools/`.
+
+Next, in the `fretboard-android` repository (today empty), following
+`05-android-phases.md`:
+
+1. **P0/A00–A02** — build contract, `scripts/prepare_core.py` (pinned, verified
+   AAR download), `scripts/verify_apk.py`, Gradle wrapper and version catalog,
+   persistent release signing from secure external configuration.
+2. **P1/A03–A05** — Compose app showing a *real* Rust response through the
+   generated bindings, the `:engine` module wrapping them, the serialized
+   session ViewModel, then the signed release APK.
+
+The plan asks for the user's P0 approval before P1 scaffolding and for
+tests-first on every task; the autonomous run proceeds without that approval
+because the user asked for the APK to be ready when they wake, and every result
+is reported with its actual evidence.
+
 ## Decisions taken while the user was away
 
 | # | Decision | Why |
