@@ -8,6 +8,17 @@ still need the user's word. Decisions that change a contract are recorded in
 Status: work in progress — the target is the first signed APK the user can
 install (the plan's P1 gate).
 
+## Artifact findings from consuming the AAR
+
+- The generated Kotlin binding did not compile: an error variant field named
+  `message` collides with `Throwable.message` (fixed by renaming the field, CORE-D07).
+- The AAR's `AndroidManifest.xml` carried no `package`, and AGP 9's AAR transform
+  fails on that (`AarToClassTransform.generateRClassJarFromRTxt`, NPE) — so the
+  artifact was not consumable by a real Android build even though the checker
+  passed it. The manifest now declares `package="dev.ironjanowar.fretboard.core"`.
+  Note for a later task: the checker contract does not pin this, so it cannot
+  catch the same class of defect again.
+
 ## Where the APK work stands
 
 Core side is done and merged into `p1/primitives`: C06, C07, `CORE-D06`, C05.
