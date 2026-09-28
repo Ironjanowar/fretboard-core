@@ -54,7 +54,7 @@ use common::{
     SHARP_NOTE_NAMES, assert_error_code, chord, oracle_chord_interval_labels,
     oracle_chord_interval_pairs, oracle_chord_label, oracle_chord_notes,
     oracle_chord_quality_label, oracle_interval_names, oracle_records, pitch_class, quality,
-    quality_formula, string_array,
+    quality_formula, quality_ids, string_array,
 };
 use fretboard_core::{
     ChordSpec, chord_details, chromatic_scale, interval_name, note_at, note_index,
@@ -76,6 +76,15 @@ const FLAT_ALIASES: [(&str, &str); 7] = [
 /// implementation under test.
 fn wrap(root: u8, semitones: i32) -> u8 {
     u8::try_from((i32::from(root) + semitones).rem_euclid(12)).expect("a wrapped class fits in u8")
+}
+
+/// The pitch class a root transposed by a *large* `semitones` must land on.
+/// The expectation is computed in `i64` from the same modular definition, so
+/// the expected value itself cannot overflow where an `i32` implementation
+/// under test would.
+fn wrap_large(root: u8, semitones: i32) -> u8 {
+    u8::try_from((i64::from(root) + i64::from(semitones)).rem_euclid(12))
+        .expect("a wrapped class fits in u8")
 }
 
 #[test]
@@ -115,17 +124,74 @@ fn flat_names_are_aliases_of_their_sharp_equivalents() {
 #[test]
 fn flat_roots_name_the_same_notes_as_their_sharp_equivalents_in_the_oracle() {
     for (flat, sharp) in FLAT_ALIASES {
+        // The expected pitch class comes from the sharp spelling's position in
+        // the chromatic scale, not from `note_index`, so an implementation that
+        // rejects every flat name (or mis-resolves one) cannot satisfy this.
+        let position = SHARP_NOTE_NAMES
+            .iter()
+            .position(|name| *name == sharp)
+            .unwrap_or_else(|| panic!("{sharp} must be one of the twelve sharp names"));
+        let expected = pitch_class(u8::try_from(position).expect("a pitch-class index fits in u8"));
+        let flat_class =
+            note_index(flat).unwrap_or_else(|error| panic!("{flat} must resolve: {error:?}"));
         assert_eq!(
-            oracle_chord_notes(flat, "major"),
+            flat_class, expected,
+            "the flat name {flat} must resolve through note_index to {sharp}'s pitch class"
+        );
+
+        // The *real* chord of the flat root equals the *real* chord of the
+        // sharp root, and both name exactly the notes the oracle pins for the
+        // sharp root. This reaches through note_index and chord_details instead
+        // of comparing oracle data with oracle data.
+        let flat_spec = ChordSpec {
+            root: flat_class,
+            quality: quality("major"),
+        };
+        let sharp_spec = ChordSpec {
+            root: expected,
+            quality: quality("major"),
+        };
+        let flat_chord = chord_details(&flat_spec)
+            .unwrap_or_else(|error| panic!("{flat}maj must be implemented: {error:?}"));
+        let sharp_chord = chord_details(&sharp_spec)
+            .unwrap_or_else(|error| panic!("{sharp}maj must be implemented: {error:?}"));
+        let flat_notes: Vec<&str> = flat_chord.notes.iter().map(|note| note.name()).collect();
+        let sharp_notes: Vec<&str> = sharp_chord.notes.iter().map(|note| note.name()).collect();
+        assert_eq!(
+            flat_notes, sharp_notes,
+            "the real chord notes of {flat} and {sharp} must be identical"
+        );
+        assert_eq!(
+            flat_notes,
             oracle_chord_notes(sharp, "major"),
-            "the oracle spells the {flat} root exactly as the {sharp} root"
+            "the real chord notes of the {flat} root must be the oracle's {sharp} notes"
         );
     }
 }
 
 #[test]
 fn unknown_note_names_are_rejected() {
-    for name in ["H", "C##", "do", "", "c", "B#", "E#", "Db ", "\t"] {
+    for name in [
+        "H",
+        "C##",
+        "do",
+        "",
+        "c",
+        "B#",
+        "E#",
+        "Db ",
+        "\t",
+        // Unicode and mixed forms: the lookup is exact ASCII, so an
+        // implementation that normalises Unicode or accepts double accidentals
+        // must still reject every one of these as an unknown identifier.
+        "\u{FF23}",  // fullwidth C
+        "D\u{266D}", // D + musical flat sign
+        "C\u{266F}", // C + musical sharp sign
+        "C\u{200B}", // C + zero-width space
+        "Cb#",       // double accidental, flat then sharp
+        "C#b",       // double accidental, sharp then flat
+        "C\u{0301}", // C + combining acute accent
+    ] {
         assert_error_code(note_index(name), "UnknownIdentifier");
     }
 }
@@ -173,6 +239,38 @@ fn transposition_wraps_downward_with_elixir_rem_semantics() {
                 wrap(root, offset),
                 "pitch class {root} minus {}",
                 -offset
+            );
+        }
+    }
+}
+
+#[test]
+fn transposition_wraps_offsets_at_the_i32_extremes() {
+    // `note_at` takes an `i32` offset. An implementation that computes
+    // `base + semitones` in `i32` overflows near the extremes — panicking in
+    // debug, or wrapping to a wrong class in release. These offsets, against
+    // every base, pin the real modular result, computed independently in `i64`.
+    let offsets = [
+        i32::MAX,
+        i32::MAX - 1,
+        i32::MAX - 5,
+        i32::MAX - 12,
+        i32::MIN,
+        i32::MIN + 1,
+        i32::MIN + 6,
+        i32::MIN + 12,
+        1_000_000_000,
+        -1_000_000_000,
+        987_654_321,
+        -2_147_000_000,
+    ];
+
+    for root in 0..12u8 {
+        for offset in offsets {
+            assert_eq!(
+                u8::from(note_at(pitch_class(root), offset)),
+                wrap_large(root, offset),
+                "pitch class {root} plus {offset}"
             );
         }
     }
@@ -251,11 +349,29 @@ fn compound_intervals_reduce_to_their_simple_interval_or_report_an_octave() {
         );
     }
 
-    for reduced in 1_u32..=11 {
+    // Compound distances, with their expected labels written out rather than
+    // compared against the implementation. The rule comes from plan section 2
+    // (and the pinned `lib/fretboard/music/pitch.ex`): a positive multiple of
+    // twelve is an `Octave`; every other distance reduces modulo twelve to its
+    // simple interval `0..=11` and takes that name from the frozen
+    // `interval_names` table. That fixture covers only `0..=11`, so the
+    // compound values are pinned explicitly here.
+    let compounds = [
+        (12_u32, "Octave"),      // 12 * 1
+        (13, "Minor 2nd"),       // 13 % 12 == 1
+        (14, "Major 2nd"),       // 14 % 12 == 2
+        (19, "Perfect 5th"),     // 19 % 12 == 7
+        (24, "Octave"),          // 12 * 2
+        (25, "Minor 2nd"),       // 25 % 12 == 1
+        (36, "Octave"),          // 12 * 3
+        (47, "Major 7th"),       // 47 % 12 == 11
+        (u32::MAX, "Minor 3rd"), // u32::MAX % 12 == 3
+    ];
+    for (semitones, expected) in compounds {
         assert_eq!(
-            interval_name(reduced + 12),
-            interval_name(reduced),
-            "an octave above the {reduced}-semitone interval reduces to it"
+            interval_name(semitones),
+            expected,
+            "the compound interval name of {semitones} semitones"
         );
     }
 }
@@ -322,16 +438,35 @@ fn an_unimplemented_quality_reports_a_documented_error() {
     // that code instead of masquerading as an invalid action. The behaviour
     // pinned here is unchanged: an error, never an empty chord presented as
     // success.
-    let spec = chord(0, "minor");
+    //
+    // P1 implements `major` only. Every other quality in the frozen catalog —
+    // read from the fixture, not retyped — must report the documented error. An
+    // implementation like `match quality { "major" | "minor" => …, _ =>
+    // major_formula }` that answers `Cmaj` for one of these is caught here.
+    let ids = quality_ids();
+    assert!(
+        ids.iter().any(|id| id == "major"),
+        "the frozen catalog must carry the major quality"
+    );
 
-    match chord_details(&spec) {
-        Ok(details) => {
-            panic!("minor is not implemented in P1 and must not answer, got a chord: {details:?}")
+    let mut checked = 0_usize;
+    for id in ids.iter().filter(|id| id.as_str() != "major") {
+        let spec = chord(0, id);
+        match chord_details(&spec) {
+            Ok(details) => panic!(
+                "{id} is not implemented in P1 and must not answer, got a chord: {details:?}"
+            ),
+            Err(error) => assert_eq!(
+                error.code(),
+                "UnsupportedCapability",
+                "the unimplemented quality {id} must report a documented error, got {error:?}"
+            ),
         }
-        Err(error) => assert_eq!(
-            error.code(),
-            "UnsupportedCapability",
-            "the unimplemented quality must report a documented error, got {error:?}"
-        ),
+        checked = checked.saturating_add(1);
     }
+    assert_eq!(
+        checked,
+        ids.len() - 1,
+        "every catalog quality except major must be exercised"
+    );
 }
