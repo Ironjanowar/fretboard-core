@@ -811,9 +811,14 @@ fn instrument_state_deserialisation_rejects_a_fretted_piano() {
 fn instrument_state_deserialisation_rejects_a_wrong_pitch_count() {
     let json = r#"{"kind":"fretted","id":"guitar","tuning":{"pitches":[40],"reference":"Standard"},"selection":[]}"#;
     let error = assert_deserialisation_rejected::<InstrumentState>(json);
+    // Pin the exact field the violation belongs to. `validate_fretted` reports
+    // the pitch count as `invalid page state: tuning`; the looser
+    // `|| contains("pitch")` was also satisfied by the unrelated primitive
+    // error `value out of range: open_pitch`, so this rejection could pass for
+    // the wrong reason.
     assert!(
-        error.to_string().contains("tuning") || error.to_string().contains("pitch"),
-        "the rejection must name the tuning, got: {error}"
+        error.to_string().contains("tuning"),
+        "the rejection must name the tuning field, got: {error}"
     );
 
     let mut too_short = preset_tuning(InstrumentId::Guitar, &preset_name("Standard"))
@@ -934,9 +939,13 @@ fn tuning_state_deserialisation_rejects_a_pitch_count_no_instrument_has() {
     let error = assert_deserialisation_rejected::<TuningState>(
         r#"{"pitches":[40],"reference":"Standard"}"#,
     );
+    // `validate_unbound_tuning` reports the impossible pitch count as
+    // `invalid page state: tuning`. The old `|| contains("pitch")` alternative
+    // was also satisfied by the unrelated primitive error
+    // `value out of range: open_pitch`, which is not this violation.
     assert!(
-        error.to_string().contains("tuning") || error.to_string().contains("pitch"),
-        "the rejection must name the tuning, got: {error}"
+        error.to_string().contains("tuning"),
+        "the rejection must name the tuning field, got: {error}"
     );
 }
 
@@ -1174,4 +1183,218 @@ fn core_error_code_is_the_stable_variant_name() {
             "the shared helper must read the same code"
         );
     }
+}
+
+// ---------------------------------------------------------------------------
+// Final C02 polish (review follow-up)
+//
+// Four thinnesses closed here: the frozen page schema's required `highlight`
+// key, the catalog `ALL` lists that later phases consume for ordering, the
+// stable code of every `CoreError` variant, and the deviation ledger that
+// `docs/contracts.md` documents but nothing read.
+// ---------------------------------------------------------------------------
+
+#[test]
+fn page_deserialisation_rejects_a_missing_highlight_key() {
+    // The frozen page schema declares exactly `instrument`, `chords`,
+    // `highlight` and `tab`. `highlight` is a required key: `"highlight": null`
+    // means "no highlight", but an *absent* key is a corrupt snapshot and must
+    // not silently default to `None`.
+    let missing = r#"{"instrument":{"kind":"piano","id":"piano","selection":[]},"chords":[],"tab":"analyzer"}"#;
+    let error = assert_deserialisation_rejected::<PageState>(missing);
+    assert!(
+        error.to_string().contains("highlight"),
+        "the rejection must name the missing highlight field, got: {error}"
+    );
+
+    // The explicit null is still accepted and still means "no highlight".
+    let null = r#"{"instrument":{"kind":"piano","id":"piano","selection":[]},"chords":[],"highlight":null,"tab":"analyzer"}"#;
+    let state: PageState =
+        serde_json::from_str(null).expect("an explicit null highlight must be accepted");
+    assert!(
+        state.highlight.is_none(),
+        "an explicit null highlight means no highlight"
+    );
+    assert_valid(validate_state(&state));
+}
+
+#[test]
+fn quality_id_all_matches_the_oracle_order() {
+    let oracle = quality_ids();
+    assert_eq!(
+        oracle.len() as u64,
+        oracle_count("chord_qualities"),
+        "the oracle's own declared quality count"
+    );
+
+    // The oracle order is the authority: `QualityId::ALL` is consumed by later
+    // phases for ordering, so swapping two entries must fail here. Comparing
+    // the whole sequence pins count, membership and order at once, without
+    // retyping the list.
+    let enumerated: Vec<String> = QualityId::ALL
+        .iter()
+        .map(|id| id.as_str().to_string())
+        .collect();
+    assert_eq!(
+        enumerated, oracle,
+        "QualityId::ALL must be exactly the oracle's quality ids in catalog order"
+    );
+
+    // Every enumerated element parses back to itself.
+    for id in QualityId::ALL {
+        assert_eq!(
+            QualityId::parse(id.as_str())
+                .unwrap_or_else(|error| panic!("{}: {error:?}", id.as_str())),
+            id,
+            "QualityId::parse must round-trip the enumerated {}",
+            id.as_str()
+        );
+        assert_eq!(
+            id.as_str()
+                .parse::<QualityId>()
+                .unwrap_or_else(|error| panic!("{}: {error:?}", id.as_str())),
+            id,
+            "FromStr must round-trip the enumerated {}",
+            id.as_str()
+        );
+    }
+}
+
+#[test]
+fn scale_id_all_matches_the_oracle_order() {
+    let oracle = scale_ids();
+    assert_eq!(
+        oracle.len() as u64,
+        oracle_count("scale_types"),
+        "the oracle's own declared scale count"
+    );
+
+    let enumerated: Vec<String> = ScaleId::ALL
+        .iter()
+        .map(|id| id.as_str().to_string())
+        .collect();
+    assert_eq!(
+        enumerated, oracle,
+        "ScaleId::ALL must be exactly the oracle's scale ids in catalog order"
+    );
+
+    for id in ScaleId::ALL {
+        assert_eq!(
+            ScaleId::parse(id.as_str())
+                .unwrap_or_else(|error| panic!("{}: {error:?}", id.as_str())),
+            id,
+            "ScaleId::parse must round-trip the enumerated {}",
+            id.as_str()
+        );
+        assert_eq!(
+            id.as_str()
+                .parse::<ScaleId>()
+                .unwrap_or_else(|error| panic!("{}: {error:?}", id.as_str())),
+            id,
+            "FromStr must round-trip the enumerated {}",
+            id.as_str()
+        );
+    }
+}
+
+#[test]
+fn preset_name_all_matches_the_oracle_order() {
+    let oracle = all_preset_names();
+
+    let enumerated: Vec<String> = PresetName::ALL
+        .iter()
+        .map(|name| name.as_str().to_string())
+        .collect();
+    assert_eq!(
+        enumerated, oracle,
+        "PresetName::ALL must be exactly the oracle's distinct preset names in catalog order"
+    );
+    assert_eq!(
+        PresetName::ALL.len(),
+        13,
+        "the frozen catalog has 13 distinct preset names"
+    );
+
+    for name in PresetName::ALL {
+        assert_eq!(
+            PresetName::parse(name.as_str())
+                .unwrap_or_else(|error| panic!("{}: {error:?}", name.as_str())),
+            name,
+            "PresetName::parse must round-trip the enumerated {}",
+            name.as_str()
+        );
+        assert_eq!(
+            name.as_str()
+                .parse::<PresetName>()
+                .unwrap_or_else(|error| panic!("{}: {error:?}", name.as_str())),
+            name,
+            "FromStr must round-trip the enumerated {}",
+            name.as_str()
+        );
+    }
+}
+
+#[test]
+fn core_error_code_is_pinned_for_every_variant() {
+    // The FFI adapter reads `code()`, so every one of the nine frozen variants
+    // must report its variant name — not just the three the running suite
+    // happened to cover.
+    let cases = [
+        (CoreError::invalid_state("tuning"), "InvalidState"),
+        (
+            CoreError::unknown_identifier("quality"),
+            "UnknownIdentifier",
+        ),
+        (CoreError::out_of_range("fret"), "OutOfRange"),
+        (CoreError::invalid_action("tab"), "InvalidAction"),
+        (CoreError::invalid_url("url"), "InvalidUrl"),
+        (CoreError::unsupported_origin("origin"), "UnsupportedOrigin"),
+        (CoreError::input_too_large("import"), "InputTooLarge"),
+        (CoreError::invalid_snapshot("snapshot"), "InvalidSnapshot"),
+        (
+            CoreError::unsupported_schema_version("schema_version"),
+            "UnsupportedSchemaVersion",
+        ),
+    ];
+
+    for (error, expected) in cases {
+        assert_eq!(error.code(), expected, "wrong code for {error:?}");
+        assert_eq!(
+            error_code(&error),
+            expected,
+            "the shared helper must read the same code"
+        );
+        assert!(
+            format!("{error:?}").starts_with(expected),
+            "the Debug rendering of {error:?} must start with its code {expected}"
+        );
+    }
+}
+
+#[test]
+fn approved_deviations_ledger_is_well_formed() {
+    // `docs/contracts.md` documents this file as the approval ledger for
+    // deliberate contract deviations. An empty list is valid and is the current
+    // state, but a malformed or mistyped ledger must not pass unnoticed.
+    let text = read_repo_file("fixtures/contract/approved-deviations.json");
+    let value: serde_json::Value =
+        serde_json::from_str(&text).expect("approved-deviations.json is valid JSON");
+
+    assert_eq!(
+        object_keys(&value),
+        name_set(&["schema_version", "approved_deviations"]),
+        "the approval ledger declares exactly schema_version and approved_deviations"
+    );
+    assert_eq!(
+        value["schema_version"],
+        serde_json::json!(1),
+        "the approval ledger schema_version is 1"
+    );
+    let approved = value["approved_deviations"]
+        .as_array()
+        .expect("approved_deviations is a list");
+    assert!(
+        approved.is_empty(),
+        "the approval ledger is currently empty; got {approved:?}"
+    );
 }

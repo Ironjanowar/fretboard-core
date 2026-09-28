@@ -12,9 +12,12 @@
 //! themselves are already validated in [`crate::types`].
 //!
 //! Deserialisation is strict and validating, not just shape-checking: unknown
-//! fields anywhere in the page are an error, and each state type rejects by
-//! itself the same violations [`validate_state`] rejects, so no code path can
-//! build a value the public API could not have built.
+//! fields anywhere in the page are an error, a key whose field is misspelled is
+//! a missing-field error rather than a silent default, and each state type
+//! rejects by itself the same violations [`validate_state`] rejects, so no
+//! *deserialisation* path can build a value the public API could not have
+//! built. The state types have public fields, so a caller can still hand-build
+//! such a value; [`validate_state`] is the entry point that rejects it.
 //!
 //! The instrument catalog tables below are the minimal, literal transcription
 //! of `fixtures/oracle/catalogs.json` that this contract needs (string counts,
@@ -470,13 +473,56 @@ pub struct PageState {
     pub tab: Tab,
 }
 
+/// A JSON field that must be **present** but may be `null`.
+///
+/// `Option<T>` alone cannot say this: serde's derive treats an `Option` field
+/// specially and turns a missing key into `None`, so a snapshot truncated after
+/// the `chords` key would silently lose its `highlight` — the same defect class
+/// as a misspelled key. Wrapping the field in this type takes it out of that
+/// special case: the derive still demands the key, and only a genuinely absent
+/// key is serde's standard ``missing field `highlight` `` error.
+///
+/// The manual impl reads the value through [`serde_json::Value`] — that is,
+/// through `deserialize_any` — on purpose. For an absent key serde calls this
+/// impl on its internal *missing-field* deserializer, whose `deserialize_option`
+/// succeeds with `None` (it exists so that `Option` fields can default), while
+/// every `deserialize_any`-based read fails with the missing-field error.
+/// Delegating to `Option::<T>::deserialize` would therefore reintroduce the
+/// silent default this type exists to prevent. JSON is the crate's only wire
+/// format (`CORE-D04`), so buffering the present value there is not a loss.
+///
+/// Deliberately not `Default`: a default would let the derive fill in the
+/// missing key again.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+struct RequiredOption<T>(Option<T>);
+
+impl<'de, T> Deserialize<'de> for RequiredOption<T>
+where
+    T: Deserialize<'de>,
+{
+    fn deserialize<D>(deserializer: D) -> Result<Self, D::Error>
+    where
+        D: Deserializer<'de>,
+    {
+        let value = serde_json::Value::deserialize(deserializer)?;
+        if value.is_null() {
+            return Ok(Self(None));
+        }
+        // `Value` is a deserializer itself, so the buffered value runs through
+        // `T`'s own strict reader; only its error type is translated.
+        T::deserialize(value)
+            .map(|value| Self(Some(value)))
+            .map_err(de::Error::custom)
+    }
+}
+
 /// The serialised shape of [`PageState`]; unknown fields are an error.
 #[derive(Debug, Deserialize)]
 #[serde(deny_unknown_fields)]
 struct PageStateWire {
     instrument: InstrumentState,
     chords: Vec<ChordSpec>,
-    highlight: Option<ChordSpec>,
+    highlight: RequiredOption<ChordSpec>,
     tab: Tab,
 }
 
@@ -489,7 +535,7 @@ impl<'de> Deserialize<'de> for PageState {
         let state = Self {
             instrument: wire.instrument,
             chords: wire.chords,
-            highlight: wire.highlight,
+            highlight: wire.highlight.0,
             tab: wire.tab,
         };
         validate_state(&state).map_err(de::Error::custom)?;
