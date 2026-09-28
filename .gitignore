@@ -14,3 +14,7 @@
 # Editor and OS noise
 .DS_Store
 *.swp
+
+# Python bytecode from the oracle checkers and their tests
+__pycache__/
+*.pyc
