@@ -181,6 +181,12 @@ pub(crate) fn canonical_preset_name(value: &str) -> Option<&'static str> {
 
 /// Compare two strings during const evaluation, where the `PartialEq` operator
 /// is not available.
+///
+/// The loop indexes both byte slices behind an explicit length equality check
+/// and only increments a counter bounded by that length, so
+/// `indexing_slicing` and `arithmetic_side_effects` are allowed here: it is
+/// compile-time table comparison, not runtime arithmetic on caller data.
+#[allow(clippy::indexing_slicing, clippy::arithmetic_side_effects)]
 const fn str_eq(left: &str, right: &str) -> bool {
     let (left, right) = (left.as_bytes(), right.as_bytes());
     if left.len() != right.len() {
@@ -204,6 +210,12 @@ const DISTINCT_PRESET_NAMES: [PresetName; PRESET_NAME_COUNT] = distinct_preset_n
 
 /// Collect the distinct preset names of the four preset tables at compile
 /// time, asserting that the frozen catalog still declares exactly thirteen.
+///
+/// Every index is bounded by the length of the table it walks and every counter
+/// is asserted before use, so `indexing_slicing` and `arithmetic_side_effects`
+/// are allowed: this runs during const evaluation over frozen tables, never on
+/// caller input.
+#[allow(clippy::indexing_slicing, clippy::arithmetic_side_effects)]
 const fn distinct_preset_names() -> [PresetName; PRESET_NAME_COUNT] {
     const TABLES: [&[PitchPreset]; 4] = [
         GUITAR_PRESETS,

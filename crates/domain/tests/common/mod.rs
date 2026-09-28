@@ -15,6 +15,7 @@
 // helpers of a test-only module that has no external users.
 #![allow(
     dead_code,
+    clippy::arithmetic_side_effects,
     clippy::expect_used,
     clippy::indexing_slicing,
     clippy::panic,

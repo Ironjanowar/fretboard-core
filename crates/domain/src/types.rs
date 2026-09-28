@@ -459,6 +459,11 @@ macro_rules! catalog_identifier_list {
         impl $name {
             /// Every accepted catalog identifier, in catalog order: `parse`
             /// accepts exactly these strings.
+            ///
+            /// Built during const evaluation with indices bounded by the table
+            /// length, so `indexing_slicing` and `arithmetic_side_effects` are
+            /// allowed here.
+            #[allow(clippy::indexing_slicing, clippy::arithmetic_side_effects)]
             pub const ALL: [Self; $ids.len()] = {
                 let mut all = [Self($ids[0]); $ids.len()];
                 let mut index = 0;
