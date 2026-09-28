@@ -184,6 +184,12 @@ pub(crate) fn canonical_preset_name(value: &str) -> Option<&'static str> {
 
 /// Compare two strings during const evaluation, where the `PartialEq` operator
 /// is not available.
+///
+/// The loop indexes both byte slices behind an explicit length equality check
+/// and only increments a counter bounded by that length, so
+/// `indexing_slicing` and `arithmetic_side_effects` are allowed here: it is
+/// compile-time table comparison, not runtime arithmetic on caller data.
+#[allow(clippy::indexing_slicing, clippy::arithmetic_side_effects)]
 const fn str_eq(left: &str, right: &str) -> bool {
     let (left, right) = (left.as_bytes(), right.as_bytes());
     if left.len() != right.len() {
@@ -207,6 +213,12 @@ const DISTINCT_PRESET_NAMES: [PresetName; PRESET_NAME_COUNT] = distinct_preset_n
 
 /// Collect the distinct preset names of the four preset tables at compile
 /// time, asserting that the frozen catalog still declares exactly thirteen.
+///
+/// Every index is bounded by the length of the table it walks and every counter
+/// is asserted before use, so `indexing_slicing` and `arithmetic_side_effects`
+/// are allowed: this runs during const evaluation over frozen tables, never on
+/// caller input.
+#[allow(clippy::indexing_slicing, clippy::arithmetic_side_effects)]
 const fn distinct_preset_names() -> [PresetName; PRESET_NAME_COUNT] {
     const TABLES: [&[PitchPreset]; 4] = [
         GUITAR_PRESETS,
@@ -259,6 +271,11 @@ impl PresetName {
 /// Convert one transcribed pitch table into the typed representation, asserting
 /// every value during const evaluation so a mistyped catalog value fails the
 /// build.
+///
+/// The index is bounded by `COUNT` and every assignment is validated, so
+/// `indexing_slicing` and `arithmetic_side_effects` are allowed here: this is
+/// compile-time table conversion, not runtime arithmetic on user input.
+#[allow(clippy::indexing_slicing, clippy::arithmetic_side_effects)]
 const fn pitches<const COUNT: usize>(values: [u8; COUNT]) -> [OpenPitch; COUNT] {
     let mut converted = [OpenPitch::from_catalog(0); COUNT];
     let mut index = 0;
@@ -547,6 +564,12 @@ pub fn default_state() -> PageState {
 /// The piano has no presets and no tuning, and a fretted instrument has only the
 /// presets of the frozen catalog, so both are typed errors rather than a
 /// function-clause crash.
+///
+/// # Errors
+///
+/// [`CoreError::InvalidState`] when the instrument is the piano, and
+/// [`CoreError::UnknownIdentifier`] when the name is not a preset of that
+/// instrument.
 pub fn preset_tuning(
     instrument: InstrumentId,
     name: &PresetName,
@@ -566,6 +589,13 @@ pub fn preset_tuning(
 /// Structural violations are [`CoreError::InvalidState`]; numeric values outside
 /// the range their position allows are [`CoreError::OutOfRange`]. The input is
 /// borrowed and never mutated, so a rejected state is left exactly as it was.
+///
+/// # Errors
+///
+/// Returns the first violation found: [`CoreError::InvalidState`] for a
+/// structurally impossible state (a fretted state carrying the piano, a wrong
+/// pitch count, duplicate string indices, a highlight absent from the chords) or
+/// [`CoreError::OutOfRange`] for a position outside its instrument's range.
 pub fn validate_state(state: &PageState) -> Result<(), CoreError> {
     validate_instrument(&state.instrument)?;
     if let Some(highlight) = &state.highlight

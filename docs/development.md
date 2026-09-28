@@ -22,13 +22,51 @@ cargo test --workspace --locked
 # Python checkers and their unit tests
 python3 -m unittest discover -s scripts/tests
 
-# Dependency graph sanity: the domain crate must have no dependencies
+# Dependency graph sanity: the domain crate may only pull serde and serde_json
 cargo tree -p fretboard-core
 ```
 
 Run cargo with `--locked`: the committed `Cargo.lock` is the resolution of
 record. If a change really needs a new dependency or version, regenerate the lock
 deliberately in its own commit.
+
+## Static analysis policy
+
+The lint policy lives in the root `Cargo.toml` under `[workspace.lints.*]`, and
+every crate opts in with `[lints] workspace = true`, so a new crate inherits the
+rules and an existing one cannot quietly relax them. On top of the default
+groups the policy turns on:
+
+- **rustc**: `unsafe_code = "forbid"`, `missing_docs`,
+  `missing_debug_implementations`, `unreachable_pub`, `unused_qualifications`,
+  `elided_lifetimes_in_paths`, `trivial_casts`, `trivial_numeric_casts`,
+  `unused_lifetimes`, `single_use_lifetimes`, `variant_size_differences`,
+  `non_ascii_idents`, `let_underscore_drop`, `macro_use_extern_crate`,
+  `unused_macro_rules`, `unexpected_cfgs`, `rust_2018_idioms`.
+- **Clippy**: the `all`, `cargo`, `pedantic` and `nursery` groups, plus the
+  restriction lints this codebase wants: `unwrap_used`, `expect_used`, `panic`,
+  `indexing_slicing`, `arithmetic_side_effects`, `missing_errors_doc`,
+  `missing_panics_doc`, `dbg_macro`, `todo`, `unimplemented`, `unreachable`,
+  `print_stdout`, `print_stderr`, `exit`, `mem_forget`,
+  `undocumented_unsafe_blocks`, `same_name_method`.
+
+Deliberate exceptions, each with its reason written next to it in the manifest:
+`module_name_repetitions`, `must_use_candidate`, `doc_markdown`,
+`missing_docs_in_private_items`, `multiple_crate_versions` (upstream `uniffi`
+pulls two `syn` versions) and `redundant_pub_crate` (it contradicts rustc's
+`unreachable_pub`, and crate-internal items in private modules stay
+`pub(crate)`).
+
+Tests relax only the panicking-by-idiom restriction lints (`expect_used`,
+`unwrap_used`, `panic`, `indexing_slicing`) plus `unreachable_pub` for test-only
+helper modules, in a header comment inside the test files themselves; every other
+lint still applies to test code.
+
+`overflow-checks` is on in the release profile as well as dev: silent
+wrap-around in pitch arithmetic would be a musical defect, not a performance win.
+
+A warning is a failure: CI runs the commands above with `-D warnings`, and a
+local run that produces warnings is not "green".
 
 ## Repository layout
 
