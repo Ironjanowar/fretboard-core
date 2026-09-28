@@ -89,8 +89,17 @@ adapter API in task `C04`; no flag may be invented by a client.
 Every fallible entry point returns a stable error code, never a panic and never a
 raw stack trace: `InvalidState`, `UnknownIdentifier`, `OutOfRange`,
 `InvalidAction`, `InvalidUrl`, `UnsupportedOrigin`, `InputTooLarge`,
-`InvalidSnapshot`, `UnsupportedSchemaVersion`. Concrete resource limits are an
-open decision (DEC-06); until it is approved, limits are not invented in code.
+`InvalidSnapshot`, `UnsupportedSchemaVersion`, and `UnsupportedCapability`.
+
+`UnsupportedCapability` is an addition to the plan's list, made in C03: the plan
+requires a "documented capability/unavailable error" for features a phase has not
+implemented yet, while its error list contained no variant for it. Without one, an
+unimplemented quality would have to masquerade as an invalid action or, worse,
+answer with a wrong chord. It is a pure addition — no existing code changed
+meaning — and it is what keeps an incomplete engine honest: the Android client
+renders an explicit English pending state instead of showing a plausible result.
+Concrete resource limits are an open decision (DEC-06); until it is approved,
+limits are not invented in code.
 
 ## Web URL compatibility
 

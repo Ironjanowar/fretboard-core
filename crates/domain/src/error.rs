@@ -8,6 +8,12 @@
 //! derived `Debug` rendering agree by construction; the C02 contract tests read
 //! the code from the value's `Debug` rendering and the later FFI adapter reads
 //! it from [`CoreError::code`].
+//!
+//! `UnsupportedCapability` is a documented addition to the plan's frozen list
+//! (`CORE-D05` in `docs/decisions.md`, made in C03): a catalog capability this
+//! engine build does not implement yet must report an explicit capability error
+//! instead of masquerading as an invalid action or answering with a plausible
+//! but wrong musical result.
 
 use std::fmt;
 
@@ -40,6 +46,10 @@ pub enum CoreError {
     InvalidSnapshot(Option<&'static str>),
     /// The snapshot declares a schema version this build cannot read.
     UnsupportedSchemaVersion(Option<&'static str>),
+    /// The requested feature is a known catalog capability this engine build
+    /// does not implement yet. A client renders an explicit pending state for
+    /// it rather than treating the absent result as an empty musical answer.
+    UnsupportedCapability(Option<&'static str>),
 }
 
 impl CoreError {
@@ -55,6 +65,7 @@ impl CoreError {
             Self::InputTooLarge(_) => "InputTooLarge",
             Self::InvalidSnapshot(_) => "InvalidSnapshot",
             Self::UnsupportedSchemaVersion(_) => "UnsupportedSchemaVersion",
+            Self::UnsupportedCapability(_) => "UnsupportedCapability",
         }
     }
 
@@ -70,7 +81,8 @@ impl CoreError {
             | Self::UnsupportedOrigin(field)
             | Self::InputTooLarge(field)
             | Self::InvalidSnapshot(field)
-            | Self::UnsupportedSchemaVersion(field) => *field,
+            | Self::UnsupportedSchemaVersion(field)
+            | Self::UnsupportedCapability(field) => *field,
         }
     }
 
@@ -119,6 +131,11 @@ impl CoreError {
         Self::UnsupportedSchemaVersion(Some(field))
     }
 
+    /// A known catalog capability this engine build does not implement yet.
+    pub const fn unsupported_capability(field: &'static str) -> Self {
+        Self::UnsupportedCapability(Some(field))
+    }
+
     /// The English sentence this code stands for; used for user-facing text and
     /// for `serde` diagnostics.
     const fn message(&self) -> &'static str {
@@ -132,6 +149,7 @@ impl CoreError {
             Self::InputTooLarge(_) => "input is larger than the accepted limit",
             Self::InvalidSnapshot(_) => "invalid snapshot",
             Self::UnsupportedSchemaVersion(_) => "unsupported snapshot schema version",
+            Self::UnsupportedCapability(_) => "capability not implemented in this build",
         }
     }
 }
