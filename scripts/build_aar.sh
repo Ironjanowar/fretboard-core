@@ -64,7 +64,7 @@ mkdir -p "${WORK}/aar/jni/${ABI}"
 cp "${WORK}/jniLibs/${ABI}"/libfretboard_mobile_ffi.so "${WORK}/aar/jni/${ABI}/"
 printf '' > "${WORK}/aar/R.txt"
 cat > "${WORK}/aar/AndroidManifest.xml" <<'MANIFEST'
-<manifest xmlns:android="http://schemas.android.com/apk/res/android" />
+<manifest xmlns:android="http://schemas.android.com/apk/res/android" package="dev.ironjanowar.fretboard.core" />
 MANIFEST
 cat > "${WORK}/aar/proguard.txt" <<'RULES'
 # Consumer rules of the Fretboard engine AAR.
