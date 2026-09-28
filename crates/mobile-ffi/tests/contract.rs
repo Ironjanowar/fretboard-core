@@ -367,6 +367,49 @@ fn chord_details_rejects_an_unknown_quality_string() {
 }
 
 #[test]
+fn a_chord_root_is_sharp_only_on_the_wire() {
+    // The adapter is a wire surface, so it accepts exactly the twelve sharp
+    // spellings the URL contract accepts (`02-core-contract.md` section 2,
+    // decision `CORE-D06`). The flat aliases widen the domain's `note_index`
+    // lookup — which the baseline's `chord_notes/2` uses, and which the domain
+    // tests pin against the oracle's flat-root records — but a flat spelling is
+    // not a wire value: it is rejected, never quietly rewritten to its sharp
+    // equivalent.
+    for flat in ["Db", "Eb", "Fb", "Gb", "Ab", "Bb", "Cb"] {
+        assert_error_code(
+            chord_details(chord(flat, "major")).map(|_| ()),
+            ErrorCode::UnknownIdentifier,
+        );
+    }
+
+    for sharp in [
+        "C", "C#", "D", "D#", "E", "F", "F#", "G", "G#", "A", "A#", "B",
+    ] {
+        let details = chord_details(chord(sharp, "major"))
+            .unwrap_or_else(|error| panic!("{sharp} is a wire spelling: {error:?}"));
+        assert_eq!(details.root, sharp, "the wire spelling is kept unchanged");
+        assert_eq!(details.label, oracle_chord_label(sharp, "major"));
+    }
+}
+
+#[test]
+fn a_flat_root_is_rejected_in_a_page_state_too() {
+    // The same rule everywhere on the boundary: an accepted page state cannot
+    // carry a flat chord root, and a highlight cannot either.
+    let state = guitar_state(vec![chord("Db", "major")], None);
+    assert_error_code(
+        validate_state(state).map(|_| ()),
+        ErrorCode::UnknownIdentifier,
+    );
+
+    let state = guitar_state(vec![chord("C", "major")], Some(chord("Bb", "major")));
+    assert_error_code(
+        validate_state(state).map(|_| ()),
+        ErrorCode::UnknownIdentifier,
+    );
+}
+
+#[test]
 fn chord_details_answers_every_catalog_quality_from_the_oracle() {
     // C06 completed the domain chord catalog, so the pending-quality path this
     // adapter test used to pin is gone: a real catalog identifier answers, and

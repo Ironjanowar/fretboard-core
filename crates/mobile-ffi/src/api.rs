@@ -57,7 +57,8 @@ pub fn validate_state(state: PageStateDto) -> Result<PageStateDto, AdapterError>
 /// # Errors
 ///
 /// [`AdapterError`] with the domain's stable code: `UnknownIdentifier` when the
-/// root is not a note name or the quality is not a frozen catalog identifier.
+/// root is not one of the twelve sharp wire names or the quality is not a frozen
+/// catalog identifier.
 /// The signature keeps the typed failure because the contract carries a code
 /// across the boundary; since `C06` implements the whole chord catalog, no
 /// quality is pending any more, so `UnsupportedCapability` is reserved for the
