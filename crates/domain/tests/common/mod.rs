@@ -110,6 +110,77 @@ pub fn quality_ids() -> Vec<String> {
         .collect()
 }
 
+/// Stable scale identifiers from the frozen catalog, in catalog order
+/// (`scale_types`).
+pub fn scale_ids() -> Vec<String> {
+    oracle_catalogs()["scale_types"]
+        .as_array()
+        .expect("scale_types must be an array")
+        .iter()
+        .map(|scale| scale["id"].as_str().expect("scale id").to_string())
+        .collect()
+}
+
+/// Every distinct preset name of the frozen catalog, in catalog order: the
+/// union of the per-instrument `instrument_pitch_presets` groups with the
+/// first occurrence keeping its place.
+pub fn all_preset_names() -> Vec<String> {
+    let mut names: Vec<String> = Vec::new();
+    for group in oracle_catalogs()["instrument_pitch_presets"]
+        .as_array()
+        .expect("instrument_pitch_presets must be an array")
+    {
+        for preset in group["presets"]
+            .as_array()
+            .expect("presets must be an array")
+        {
+            let name = preset["name"].as_str().expect("preset name").to_string();
+            if !names.contains(&name) {
+                names.push(name);
+            }
+        }
+    }
+    names
+}
+
+/// One declared catalog count from the oracle's `counts` object.
+pub fn oracle_count(key: &str) -> u64 {
+    oracle_catalogs()["counts"][key]
+        .as_u64()
+        .unwrap_or_else(|| panic!("the oracle declares no count {key}"))
+}
+
+/// The semitone formula of one catalog chord quality, in formula order.
+pub fn quality_formula(id: &str) -> Vec<u8> {
+    let catalogs = oracle_catalogs();
+    let quality = catalogs["chord_qualities"]
+        .as_array()
+        .expect("chord_qualities must be an array")
+        .iter()
+        .find(|quality| quality["id"].as_str() == Some(id))
+        .unwrap_or_else(|| panic!("the oracle has no chord quality {id}"));
+    quality["formula"]
+        .as_array()
+        .expect("formula must be an array")
+        .iter()
+        .map(|interval| {
+            u8::try_from(interval.as_u64().expect("interval is an integer"))
+                .expect("interval fits in u8")
+        })
+        .collect()
+}
+
+/// The twelve pitch classes a root plus a catalog quality names, taken from the
+/// oracle formula. Two chords with the same pitch-class set still have
+/// different identity when their root and quality differ.
+pub fn pitch_class_set(root: u8, quality_id: &str) -> BTreeSet<u8> {
+    const PITCH_CLASSES: u8 = 12;
+    quality_formula(quality_id)
+        .into_iter()
+        .map(|interval| (root + interval) % PITCH_CLASSES)
+        .collect()
+}
+
 /// A preset name that exists for ukulele but not for guitar, taken from the
 /// oracle; used to prove a foreign reference is rejected.
 pub fn ukelele_only_preset_name() -> String {
@@ -191,27 +262,31 @@ pub fn fretted_page(
     )
 }
 
-/// The stable code of a `CoreError` is its variant name. The plan fixes the
-/// code list but not the exact variant field shape, so the code is read from
-/// the value's `Debug` rendering, which always starts with the variant name.
+/// The stable code of a `CoreError` is its variant name, exposed to the FFI
+/// adapter by the public [`CoreError::code`]. The contract tests assert that
+/// accessor directly instead of parsing the `Debug` rendering.
 pub fn error_code(error: &CoreError) -> String {
-    let rendered = format!("{error:?}");
-    let code: String = rendered
-        .chars()
-        .take_while(|character| character.is_ascii_alphanumeric() || *character == '_')
-        .collect();
-    assert!(!code.is_empty(), "no error code in {rendered}");
-    code
+    error.code().to_string()
 }
 
 pub fn assert_error_code<T: Debug>(result: Result<T, CoreError>, expected: &str) {
     match result {
         Ok(value) => panic!("expected {expected}, got Ok({value:?})"),
-        Err(error) => assert_eq!(
-            error_code(&error),
-            expected,
-            "wrong error code for {error:?}"
-        ),
+        Err(error) => assert_eq!(error.code(), expected, "wrong error code for {error:?}"),
+    }
+}
+
+/// Assert that `json` is rejected when deserialised as `T`, and return the
+/// rejection. A snapshot with an unknown field, or one that violates the state
+/// invariants, must fail here rather than deserialise into a value the public
+/// API could not have built.
+pub fn assert_deserialisation_rejected<T>(json: &str) -> serde_json::Error
+where
+    T: serde::de::DeserializeOwned,
+{
+    match serde_json::from_str::<T>(json) {
+        Ok(_) => panic!("expected this JSON to be rejected, but it deserialised: {json}"),
+        Err(error) => error,
     }
 }
 

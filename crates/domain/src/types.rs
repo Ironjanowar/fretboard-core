@@ -441,6 +441,28 @@ macro_rules! stable_identifier {
     };
 }
 
+/// Declare the exhaustive identifier list of a catalog-backed identifier type.
+///
+/// [`ALL`](Self::ALL) is generated from the same table the parser searches, so
+/// the enumerated accepted set and the parsed accepted set cannot drift.
+macro_rules! catalog_identifier_list {
+    ($name:ident, $ids:ident) => {
+        impl $name {
+            /// Every accepted catalog identifier, in catalog order: `parse`
+            /// accepts exactly these strings.
+            pub const ALL: [Self; $ids.len()] = {
+                let mut all = [Self($ids[0]); $ids.len()];
+                let mut index = 0;
+                while index < $ids.len() {
+                    all[index] = Self($ids[index]);
+                    index += 1;
+                }
+                all
+            };
+        }
+    };
+}
+
 stable_identifier!(
     /// A validated chord-quality identifier; the display label of a quality is
     /// a catalog concern and is not this identifier.
@@ -449,12 +471,16 @@ stable_identifier!(
     canonical_quality_id
 );
 
+catalog_identifier_list!(QualityId, QUALITY_IDS);
+
 stable_identifier!(
     /// A validated scale identifier.
     ScaleId,
     "scale",
     canonical_scale_id
 );
+
+catalog_identifier_list!(ScaleId, SCALE_IDS);
 
 stable_identifier!(
     /// A validated instrument pitch-preset name.
