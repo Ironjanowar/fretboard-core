@@ -14,7 +14,7 @@
 
 use fretboard_core::{
     ChordDetails, ChordSpec, CoreError, Fret, InstrumentId, InstrumentState, OpenPitch, PageState,
-    Position, PresetName, QualityId, StringIndex, Tab, TuningState, note_index,
+    PitchClass, Position, PresetName, QualityId, StringIndex, Tab, TuningState,
 };
 
 use crate::dto::{
@@ -50,12 +50,17 @@ impl From<CoreError> for AdapterError {
 
 /// The domain chord identity of a chord DTO.
 ///
-/// The root is looked up through the domain's note table (which also
-/// recognizes the flat aliases) and the quality through the domain's stable
-/// quality identifiers.
+/// The root is parsed with the domain's wire spelling rule — the twelve sharp
+/// names only (`PitchClass::from_str`, `02-core-contract.md` section 2,
+/// `CORE-D06`) — and the quality through the domain's stable quality
+/// identifiers. A flat spelling is therefore rejected, exactly as the URL
+/// contract rejects it, rather than silently rewritten to its sharp equivalent.
 pub(crate) fn chord_from_dto(chord: &ChordDto) -> Result<ChordSpec, AdapterError> {
     Ok(ChordSpec {
-        root: note_index(&chord.root).map_err(AdapterError::from)?,
+        root: chord
+            .root
+            .parse::<PitchClass>()
+            .map_err(AdapterError::from)?,
         quality: QualityId::parse(&chord.quality).map_err(AdapterError::from)?,
     })
 }

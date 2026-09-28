@@ -67,6 +67,13 @@ binding resolutions, implemented with the C02 tests:
   `UnknownIdentifier` (a lookup failure), while a committed state whose reference
   does not belong to its instrument is `InvalidState` (a structural violation).
   The adapter maps both to the same user-facing English message.
+- A chord root on a wire surface is one of the twelve sharp names
+  (`C C# D D# E F F# G G# A A# B`). The seven flat aliases (`Db Eb Fb Gb Ab Bb
+  Cb`) widen the domain's note lookup (`note_index`) only — which is how the
+  baseline's `chord_notes/2` resolves them, and what the oracle's flat-root
+  records pin — and are rejected on every wire surface (the adapter DTOs and the
+  snapshot decoder), never rewritten to the sharp equivalent (`CORE-D06`,
+  decided 2026-09-28).
 
 ## Deviations
 

@@ -33,9 +33,49 @@ use common::{
     preset_pitches, quality_ids, read_repo_file, scale_ids, ukelele_only_preset_name,
 };
 use fretboard_core::{
-    CoreError, Fret, InstrumentId, InstrumentState, OpenPitch, PageState, PresetName, QualityId,
-    ScaleId, SoundingPitch, Tab, TuningState, default_state, preset_tuning, validate_state,
+    CoreError, Fret, InstrumentId, InstrumentState, OpenPitch, PageState, PitchClass, PresetName,
+    QualityId, ScaleId, SoundingPitch, Tab, TuningState, default_state, preset_tuning,
+    validate_state,
 };
+
+#[test]
+fn the_wire_spelling_of_a_pitch_class_is_sharp_only() {
+    // `02-core-contract.md` section 2: the twelve sharp names are the wire
+    // spelling ("URL chord and tuning parsing stays sharp-only — it parses
+    // `PitchClass` directly and never goes through `note_index`"). The seven
+    // flat aliases widen the *domain lookup* only; they are not a wire value
+    // (decision `CORE-D06`, `docs/decisions.md`).
+    for name in SHARP_NOTE_NAMES {
+        let pitch_class: PitchClass = name
+            .parse()
+            .unwrap_or_else(|error| panic!("the wire name {name} must parse: {error:?}"));
+        assert_eq!(pitch_class.name(), name, "a wire name round-trips");
+    }
+
+    for flat in ["Db", "Eb", "Fb", "Gb", "Ab", "Bb", "Cb"] {
+        assert_error_code(flat.parse::<PitchClass>().map(|_| ()), "UnknownIdentifier");
+    }
+
+    for unknown in [
+        "H",
+        "c",
+        "C##",
+        "E#",
+        "B#",
+        "",
+        " C",
+        "C ",
+        "C# ",
+        "\u{FF23}",
+        "D\u{266D}",
+        "C\u{200B}",
+    ] {
+        assert_error_code(
+            unknown.parse::<PitchClass>().map(|_| ()),
+            "UnknownIdentifier",
+        );
+    }
+}
 
 #[test]
 fn default_state_is_guitar_standard_from_the_oracle() {
