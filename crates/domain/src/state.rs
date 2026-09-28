@@ -11,13 +11,18 @@
 //! contract's invariants are about *combinations* of fields; the field types
 //! themselves are already validated in [`crate::types`].
 //!
+//! Deserialisation is strict and validating, not just shape-checking: unknown
+//! fields anywhere in the page are an error, and each state type rejects by
+//! itself the same violations [`validate_state`] rejects, so no code path can
+//! build a value the public API could not have built.
+//!
 //! The instrument catalog tables below are the minimal, literal transcription
 //! of `fixtures/oracle/catalogs.json` that this contract needs (string counts,
 //! named pitch presets, the piano range). The full catalog record — labels,
 //! fret counts, groups — is C07's `instrument_catalog.rs`, which takes over
 //! these tables.
 
-use serde::de::{self, IgnoredAny};
+use serde::de;
 use serde::ser::SerializeMap;
 use serde::{Deserialize, Deserializer, Serialize, Serializer};
 
@@ -34,6 +39,10 @@ const PIANO_PITCH_RANGE: (u8, u8) = (48, 83);
 /// section 6: guitar Standard, reference Standard).
 const GUITAR_STANDARD: PitchPreset =
     PitchPreset::new("Standard", &pitches([40, 45, 50, 55, 59, 64]));
+
+/// The number of distinct preset names of the frozen catalog: the union of the
+/// four per-instrument preset tables below.
+const PRESET_NAME_COUNT: usize = 13;
 
 /// One named pitch preset: the exact absolute pitch of every physical string,
 /// in physical string order.
@@ -170,6 +179,80 @@ pub(crate) fn canonical_preset_name(value: &str) -> Option<&'static str> {
     .find(|name| *name == value)
 }
 
+/// Compare two strings during const evaluation, where the `PartialEq` operator
+/// is not available.
+const fn str_eq(left: &str, right: &str) -> bool {
+    let (left, right) = (left.as_bytes(), right.as_bytes());
+    if left.len() != right.len() {
+        return false;
+    }
+    let mut index = 0;
+    while index < left.len() {
+        if left[index] != right[index] {
+            return false;
+        }
+        index += 1;
+    }
+    true
+}
+
+/// Every distinct preset name of the frozen catalog, in catalog order: the
+/// union of the four per-instrument preset tables with the first occurrence
+/// keeping its place. This is the source of [`PresetName::ALL`], so the
+/// enumerated accepted names and the parsed accepted names cannot drift.
+const DISTINCT_PRESET_NAMES: [PresetName; PRESET_NAME_COUNT] = distinct_preset_names();
+
+/// Collect the distinct preset names of the four preset tables at compile
+/// time, asserting that the frozen catalog still declares exactly thirteen.
+const fn distinct_preset_names() -> [PresetName; PRESET_NAME_COUNT] {
+    const TABLES: [&[PitchPreset]; 4] = [
+        GUITAR_PRESETS,
+        BASS_4_PRESETS,
+        BASS_5_PRESETS,
+        UKELELE_PRESETS,
+    ];
+    let mut names = [PresetName::from_catalog(""); PRESET_NAME_COUNT];
+    let mut count = 0;
+    let mut table_index = 0;
+    while table_index < TABLES.len() {
+        let table = TABLES[table_index];
+        let mut preset_index = 0;
+        while preset_index < table.len() {
+            let name = table[preset_index].name;
+            let mut seen = false;
+            let mut scan = 0;
+            while scan < count {
+                if str_eq(names[scan].as_str(), name.as_str()) {
+                    seen = true;
+                    break;
+                }
+                scan += 1;
+            }
+            if !seen {
+                assert!(
+                    count < PRESET_NAME_COUNT,
+                    "more than 13 distinct preset names"
+                );
+                names[count] = name;
+                count += 1;
+            }
+            preset_index += 1;
+        }
+        table_index += 1;
+    }
+    assert!(
+        count == PRESET_NAME_COUNT,
+        "the frozen catalog has 13 distinct preset names"
+    );
+    names
+}
+
+impl PresetName {
+    /// Every distinct preset name of the frozen catalog, in catalog order:
+    /// [`PresetName::parse`] accepts exactly these names.
+    pub const ALL: [Self; 13] = DISTINCT_PRESET_NAMES;
+}
+
 /// Convert one transcribed pitch table into the typed representation, asserting
 /// every value during const evaluation so a mistyped catalog value fails the
 /// build.
@@ -195,6 +278,7 @@ const fn pitches<const COUNT: usize>(values: [u8; COUNT]) -> [OpenPitch; COUNT] 
 /// as the identity they compare; the active list still keeps occurrences, so
 /// two copies of the same identity remain two entries.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, Serialize, Deserialize)]
+#[serde(deny_unknown_fields)]
 pub struct ChordSpec {
     /// The chord root.
     pub root: PitchClass,
@@ -204,7 +288,7 @@ pub struct ChordSpec {
 
 /// A committed tuning: the exact pitch of every string plus the preset every
 /// editing operation is anchored to.
-#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[derive(Debug, Clone, PartialEq, Eq, Serialize)]
 pub struct TuningState {
     /// The exact absolute pitch of every string, in physical string order.
     pub pitches: Vec<OpenPitch>,
@@ -212,8 +296,32 @@ pub struct TuningState {
     pub reference: PresetName,
 }
 
+/// The serialised shape of [`TuningState`]; unknown fields are an error.
+#[derive(Debug, Deserialize)]
+#[serde(deny_unknown_fields)]
+struct TuningStateWire {
+    pitches: Vec<OpenPitch>,
+    reference: PresetName,
+}
+
+impl<'de> Deserialize<'de> for TuningState {
+    fn deserialize<D>(deserializer: D) -> Result<Self, D::Error>
+    where
+        D: Deserializer<'de>,
+    {
+        let wire = TuningStateWire::deserialize(deserializer)?;
+        let tuning = Self {
+            pitches: wire.pitches,
+            reference: wire.reference,
+        };
+        validate_unbound_tuning(&tuning).map_err(de::Error::custom)?;
+        Ok(tuning)
+    }
+}
+
 /// One fretted selection entry: a string and the fret marked on it.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash, Serialize, Deserialize)]
+#[serde(deny_unknown_fields)]
 pub struct Position {
     /// The physical string index.
     pub string: StringIndex,
@@ -241,27 +349,37 @@ pub enum InstrumentState {
     },
 }
 
-/// The serialised shape of [`InstrumentState`]: a tagged object that carries
-/// `kind` and `id` for both kinds, `tuning` only for fretted and `selection`
-/// for both.
+/// The serialised shape of [`InstrumentState`]: a tagged object whose `kind`
+/// selects one strict variant schema. `Fretted` carries `id`, `tuning` and
+/// `selection`; `Piano` carries `id` and `selection` and deliberately declares
+/// no `tuning` field, so a stray `tuning` key — null or not — is an unknown
+/// field of the piano schema.
 #[derive(Debug, Deserialize)]
 #[serde(tag = "kind", rename_all = "lowercase")]
 enum InstrumentStateWire {
-    Fretted {
-        #[serde(rename = "id")]
-        instrument: InstrumentId,
-        tuning: TuningState,
-        #[serde(rename = "selection")]
-        selected: Vec<Position>,
-    },
-    Piano {
-        #[serde(rename = "id")]
-        instrument: InstrumentId,
-        #[serde(rename = "selection")]
-        selected: Vec<OpenPitch>,
-        #[serde(rename = "tuning")]
-        tuning: Option<IgnoredAny>,
-    },
+    Fretted(FrettedWire),
+    Piano(PianoWire),
+}
+
+/// The wire fields of a fretted instrument; unknown fields are an error.
+#[derive(Debug, Deserialize)]
+#[serde(deny_unknown_fields)]
+struct FrettedWire {
+    #[serde(rename = "id")]
+    instrument: InstrumentId,
+    tuning: TuningState,
+    #[serde(rename = "selection")]
+    selected: Vec<Position>,
+}
+
+/// The wire fields of the piano; unknown fields are an error.
+#[derive(Debug, Deserialize)]
+#[serde(deny_unknown_fields)]
+struct PianoWire {
+    #[serde(rename = "id")]
+    instrument: InstrumentId,
+    #[serde(rename = "selection")]
+    selected: Vec<OpenPitch>,
 }
 
 impl Serialize for InstrumentState {
@@ -296,30 +414,32 @@ impl<'de> Deserialize<'de> for InstrumentState {
     where
         D: Deserializer<'de>,
     {
-        Ok(match InstrumentStateWire::deserialize(deserializer)? {
-            InstrumentStateWire::Fretted {
-                instrument,
-                tuning,
-                selected,
-            } => Self::Fretted {
-                instrument,
-                tuning,
-                selected,
-            },
-            InstrumentStateWire::Piano {
-                instrument,
-                selected,
-                tuning,
-            } => {
-                if instrument != InstrumentId::Piano {
+        match InstrumentStateWire::deserialize(deserializer)? {
+            InstrumentStateWire::Fretted(wire) => {
+                // A fretted state may not carry the piano: that is the only
+                // representation that could attach a tuning to a keyboard
+                // instrument.
+                if !wire.instrument.is_fretted() {
                     return Err(de::Error::custom(CoreError::invalid_state("instrument")));
                 }
-                if tuning.is_some() {
-                    return Err(de::Error::custom(CoreError::invalid_state("tuning")));
-                }
-                Self::Piano { selected }
+                validate_fretted(wire.instrument, &wire.tuning, &wire.selected)
+                    .map_err(de::Error::custom)?;
+                Ok(Self::Fretted {
+                    instrument: wire.instrument,
+                    tuning: wire.tuning,
+                    selected: wire.selected,
+                })
             }
-        })
+            InstrumentStateWire::Piano(wire) => {
+                if wire.instrument != InstrumentId::Piano {
+                    return Err(de::Error::custom(CoreError::invalid_state("instrument")));
+                }
+                validate_piano_selection(&wire.selected).map_err(de::Error::custom)?;
+                Ok(Self::Piano {
+                    selected: wire.selected,
+                })
+            }
+        }
     }
 }
 
@@ -338,8 +458,9 @@ pub struct PageState {
     pub tab: Tab,
 }
 
-/// The serialised shape of [`PageState`].
+/// The serialised shape of [`PageState`]; unknown fields are an error.
 #[derive(Debug, Deserialize)]
+#[serde(deny_unknown_fields)]
 struct PageStateWire {
     instrument: InstrumentState,
     chords: Vec<ChordSpec>,
@@ -442,31 +563,74 @@ fn validate_instrument(instrument: &InstrumentState) -> Result<(), CoreError> {
             if !instrument.is_fretted() {
                 return Err(CoreError::invalid_state("instrument"));
             }
-            let definition = definition_of(*instrument);
-            if tuning.pitches.len() != usize::from(definition.strings) {
-                return Err(CoreError::invalid_state("tuning"));
-            }
-            if definition.preset(tuning.reference).is_none() {
-                return Err(CoreError::invalid_state("reference"));
-            }
-            validate_positions(definition, selected)
+            validate_fretted(*instrument, tuning, selected)
         }
-        InstrumentState::Piano { selected } => {
-            let (lowest, highest) = PIANO_PITCH_RANGE;
-            let mut previous: Option<OpenPitch> = None;
-            for pitch in selected {
-                let value = u8::from(*pitch);
-                if value < lowest || value > highest {
-                    return Err(CoreError::out_of_range("selection"));
-                }
-                if previous.is_some_and(|previous| *pitch <= previous) {
-                    return Err(CoreError::invalid_state("selection"));
-                }
-                previous = Some(*pitch);
-            }
-            Ok(())
-        }
+        InstrumentState::Piano { selected } => validate_piano_selection(selected),
     }
+}
+
+/// Check a fretted instrument's tuning and selection against its definition:
+/// the pitch count must match the instrument's string count, the reference must
+/// be one of its own presets, and every position must be on a string it has.
+fn validate_fretted(
+    instrument: InstrumentId,
+    tuning: &TuningState,
+    selected: &[Position],
+) -> Result<(), CoreError> {
+    let definition = definition_of(instrument);
+    if tuning.pitches.len() != usize::from(definition.strings) {
+        return Err(CoreError::invalid_state("tuning"));
+    }
+    if definition.preset(tuning.reference).is_none() {
+        return Err(CoreError::invalid_state("reference"));
+    }
+    validate_positions(definition, selected)
+}
+
+/// Check a bare [`TuningState`] against the frozen catalog.
+///
+/// A bare tuning carries no instrument id, so the strongest decidable rule is:
+/// its pitch count must be the string count of some fretted instrument, and its
+/// reference must be a preset of an instrument with that same string count.
+/// Requiring only a known name would be too weak — `Low G` is a real preset,
+/// but not one for a six-string instrument.
+fn validate_unbound_tuning(tuning: &TuningState) -> Result<(), CoreError> {
+    let string_count = tuning.pitches.len();
+    let no_fretted_instrument_has_this_many_strings =
+        !InstrumentId::ALL.iter().copied().any(|instrument| {
+            instrument.is_fretted()
+                && usize::from(definition_of(instrument).strings) == string_count
+        });
+    if no_fretted_instrument_has_this_many_strings {
+        return Err(CoreError::invalid_state("tuning"));
+    }
+    let reference_belongs_to_a_same_count_instrument =
+        InstrumentId::ALL.iter().copied().any(|instrument| {
+            instrument.is_fretted()
+                && usize::from(definition_of(instrument).strings) == string_count
+                && definition_of(instrument).preset(tuning.reference).is_some()
+        });
+    if !reference_belongs_to_a_same_count_instrument {
+        return Err(CoreError::invalid_state("reference"));
+    }
+    Ok(())
+}
+
+/// Check a piano selection: every key within 48..=83, unique and ascending.
+fn validate_piano_selection(selected: &[OpenPitch]) -> Result<(), CoreError> {
+    let (lowest, highest) = PIANO_PITCH_RANGE;
+    let mut previous: Option<OpenPitch> = None;
+    for pitch in selected {
+        let value = u8::from(*pitch);
+        if value < lowest || value > highest {
+            return Err(CoreError::out_of_range("selection"));
+        }
+        if previous.is_some_and(|previous| *pitch <= previous) {
+            return Err(CoreError::invalid_state("selection"));
+        }
+        previous = Some(*pitch);
+    }
+    Ok(())
 }
 
 /// Check the fretted selection: the string must exist on the instrument, and the
