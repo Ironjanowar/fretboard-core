@@ -47,6 +47,14 @@ const MAX_SOUNDING_PITCH: u16 = 151;
 pub struct PitchClass(u8);
 
 impl PitchClass {
+    /// The table-internal constructor for the frozen catalog constants: the
+    /// bound is asserted during const evaluation, so a mistranscribed pitch
+    /// class fails the build instead of becoming a runtime error.
+    pub(crate) const fn from_catalog(value: u8) -> Self {
+        assert!(value < PITCH_CLASS_COUNT, "pitch class out of range");
+        Self(value)
+    }
+
     /// The sharp name of this pitch class.
     pub const fn name(self) -> &'static str {
         // The newtype's invariant is 0..=11, so this index cannot be out of
@@ -538,7 +546,7 @@ stable_identifier!(
     /// instrument is a validation question (contract section 8).
     PresetName,
     "reference",
-    crate::state::canonical_preset_name
+    crate::instrument_catalog::canonical_preset_name
 );
 
 impl PresetName {
