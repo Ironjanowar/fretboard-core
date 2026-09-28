@@ -254,7 +254,7 @@ fn assert_error_code<T: std::fmt::Debug>(
                 "wrong typed error code in {error:?}"
             );
             assert!(
-                !error.message().is_empty(),
+                !error.sentence().is_empty(),
                 "the typed error must carry an English message: {error:?}"
             );
             error
@@ -559,7 +559,7 @@ fn validate_state_rejects_an_out_of_range_piano_pitch() {
     };
     let error = assert_error_code(validate_state(state).map(|_| ()), ErrorCode::OutOfRange);
     assert!(
-        !error.message().is_empty(),
+        !error.sentence().is_empty(),
         "an out-of-range piano pitch must carry a message"
     );
 
@@ -654,70 +654,70 @@ fn every_adapter_error_variant_reports_its_matching_code() {
     let cases = [
         (
             AdapterError::InvalidState {
-                message: "state is inconsistent".to_string(),
+                sentence: "state is inconsistent".to_string(),
                 field: Some("chords".to_string()),
             },
             ErrorCode::InvalidState,
         ),
         (
             AdapterError::UnknownIdentifier {
-                message: "unknown catalog identifier".to_string(),
+                sentence: "unknown catalog identifier".to_string(),
                 field: Some("instrument".to_string()),
             },
             ErrorCode::UnknownIdentifier,
         ),
         (
             AdapterError::OutOfRange {
-                message: "value is outside its range".to_string(),
+                sentence: "value is outside its range".to_string(),
                 field: Some("fret".to_string()),
             },
             ErrorCode::OutOfRange,
         ),
         (
             AdapterError::InvalidAction {
-                message: "the action does not apply".to_string(),
+                sentence: "the action does not apply".to_string(),
                 field: None,
             },
             ErrorCode::InvalidAction,
         ),
         (
             AdapterError::InvalidUrl {
-                message: "not a syntactically valid url".to_string(),
+                sentence: "not a syntactically valid url".to_string(),
                 field: None,
             },
             ErrorCode::InvalidUrl,
         ),
         (
             AdapterError::UnsupportedOrigin {
-                message: "the origin is outside the share policy".to_string(),
+                sentence: "the origin is outside the share policy".to_string(),
                 field: None,
             },
             ErrorCode::UnsupportedOrigin,
         ),
         (
             AdapterError::InputTooLarge {
-                message: "the input is larger than the import limit".to_string(),
+                sentence: "the input is larger than the import limit".to_string(),
                 field: None,
             },
             ErrorCode::InputTooLarge,
         ),
         (
             AdapterError::InvalidSnapshot {
-                message: "the snapshot is corrupt".to_string(),
+                sentence: "the snapshot is corrupt".to_string(),
                 field: Some("snapshot".to_string()),
             },
             ErrorCode::InvalidSnapshot,
         ),
         (
             AdapterError::UnsupportedSchemaVersion {
-                message: "the snapshot schema version is not readable".to_string(),
+                sentence: "the snapshot schema version is not readable".to_string(),
                 field: Some("schema_version".to_string()),
             },
             ErrorCode::UnsupportedSchemaVersion,
         ),
         (
             AdapterError::UnsupportedCapability {
-                message: "the capability is not implemented yet".to_string(),
+                sentence: "the capability is not implemented yet".to_string(),
                 field: Some("quality".to_string()),
             },
             ErrorCode::UnsupportedCapability,
@@ -733,8 +733,8 @@ fn every_adapter_error_variant_reports_its_matching_code() {
             "the wire code must agree with the typed code for {error:?}"
         );
         assert!(
-            !error.message().is_empty(),
-            "an adapter error must carry an English message: {error:?}"
+            !error.sentence().is_empty(),
+            "an adapter error must carry an English sentence: {error:?}"
         );
     }
 }
@@ -780,7 +780,7 @@ fn every_domain_error_variant_maps_to_its_own_adapter_code() {
             "the mapped code of a domain error must be its own"
         );
         assert!(
-            !error.message().is_empty(),
+            !error.sentence().is_empty(),
             "a mapped error must carry an English message"
         );
     }
@@ -796,7 +796,7 @@ fn a_domain_error_keeps_its_field_name_as_diagnostic_detail() {
         "the domain's field name must survive the mapping"
     );
     assert!(
-        error.message().contains("highlight"),
+        error.sentence().contains("highlight"),
         "the domain's own sentence must survive the mapping: {error}"
     );
 }

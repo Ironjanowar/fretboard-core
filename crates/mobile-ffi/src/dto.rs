@@ -98,70 +98,70 @@ pub enum AdapterError {
     /// The value is structurally inconsistent.
     InvalidState {
         /// The English sentence of the failure, as the domain phrased it.
-        message: String,
+        sentence: String,
         /// The offending field, when the domain names one.
         field: Option<String>,
     },
     /// The string is not one of the stable catalog identifiers.
     UnknownIdentifier {
         /// The English sentence of the failure, as the domain phrased it.
-        message: String,
+        sentence: String,
         /// The offending field, when the domain names one.
         field: Option<String>,
     },
     /// A numeric value is outside the range its position allows.
     OutOfRange {
         /// The English sentence of the failure, as the domain phrased it.
-        message: String,
+        sentence: String,
         /// The offending field, when the domain names one.
         field: Option<String>,
     },
     /// The action cannot apply to the current state.
     InvalidAction {
         /// The English sentence of the failure, as the domain phrased it.
-        message: String,
+        sentence: String,
         /// The offending field, when the domain names one.
         field: Option<String>,
     },
     /// The input is not a syntactically valid URL.
     InvalidUrl {
         /// The English sentence of the failure, as the domain phrased it.
-        message: String,
+        sentence: String,
         /// The offending field, when the domain names one.
         field: Option<String>,
     },
     /// The URL origin is outside the configured share policy.
     UnsupportedOrigin {
         /// The English sentence of the failure, as the domain phrased it.
-        message: String,
+        sentence: String,
         /// The offending field, when the domain names one.
         field: Option<String>,
     },
     /// The input is larger than the accepted import limit.
     InputTooLarge {
         /// The English sentence of the failure, as the domain phrased it.
-        message: String,
+        sentence: String,
         /// The offending field, when the domain names one.
         field: Option<String>,
     },
     /// The snapshot is corrupt, truncated or of the wrong shape.
     InvalidSnapshot {
         /// The English sentence of the failure, as the domain phrased it.
-        message: String,
+        sentence: String,
         /// The offending field, when the domain names one.
         field: Option<String>,
     },
     /// The snapshot declares a schema version this build cannot read.
     UnsupportedSchemaVersion {
         /// The English sentence of the failure, as the domain phrased it.
-        message: String,
+        sentence: String,
         /// The offending field, when the domain names one.
         field: Option<String>,
     },
     /// A known catalog capability this engine build does not implement yet.
     UnsupportedCapability {
         /// The English sentence of the failure, as the domain phrased it.
-        message: String,
+        sentence: String,
         /// The offending field, when the domain names one.
         field: Option<String>,
     },
@@ -185,18 +185,24 @@ impl AdapterError {
     }
 
     /// The English sentence of this failure, as the domain phrased it.
-    pub fn message(&self) -> &str {
+    ///
+    /// The field is called `sentence` rather than `message` on purpose: the
+    /// generated Kotlin subclass of an error inherits `Throwable.message`, and a
+    /// variant field named `message` makes the generated binding ambiguous and
+    /// un-compilable under the pinned UniFFI 0.32.2. UniFFI still renders the
+    /// fields into Kotlin's own `message` property.
+    pub fn sentence(&self) -> &str {
         match self {
-            Self::InvalidState { message, .. }
-            | Self::UnknownIdentifier { message, .. }
-            | Self::OutOfRange { message, .. }
-            | Self::InvalidAction { message, .. }
-            | Self::InvalidUrl { message, .. }
-            | Self::UnsupportedOrigin { message, .. }
-            | Self::InputTooLarge { message, .. }
-            | Self::InvalidSnapshot { message, .. }
-            | Self::UnsupportedSchemaVersion { message, .. }
-            | Self::UnsupportedCapability { message, .. } => message,
+            Self::InvalidState { sentence, .. }
+            | Self::UnknownIdentifier { sentence, .. }
+            | Self::OutOfRange { sentence, .. }
+            | Self::InvalidAction { sentence, .. }
+            | Self::InvalidUrl { sentence, .. }
+            | Self::UnsupportedOrigin { sentence, .. }
+            | Self::InputTooLarge { sentence, .. }
+            | Self::InvalidSnapshot { sentence, .. }
+            | Self::UnsupportedSchemaVersion { sentence, .. }
+            | Self::UnsupportedCapability { sentence, .. } => sentence,
         }
     }
 
@@ -221,28 +227,28 @@ impl AdapterError {
     ///
     /// The code selects the variant, so a call site cannot pair a variant with
     /// a code that contradicts it.
-    pub fn new(code: ErrorCode, message: impl Into<String>, field: Option<String>) -> Self {
-        let message = message.into();
+    pub fn new(code: ErrorCode, sentence: impl Into<String>, field: Option<String>) -> Self {
+        let sentence = sentence.into();
         match code {
-            ErrorCode::InvalidState => Self::InvalidState { message, field },
-            ErrorCode::UnknownIdentifier => Self::UnknownIdentifier { message, field },
-            ErrorCode::OutOfRange => Self::OutOfRange { message, field },
-            ErrorCode::InvalidAction => Self::InvalidAction { message, field },
-            ErrorCode::InvalidUrl => Self::InvalidUrl { message, field },
-            ErrorCode::UnsupportedOrigin => Self::UnsupportedOrigin { message, field },
-            ErrorCode::InputTooLarge => Self::InputTooLarge { message, field },
-            ErrorCode::InvalidSnapshot => Self::InvalidSnapshot { message, field },
+            ErrorCode::InvalidState => Self::InvalidState { sentence, field },
+            ErrorCode::UnknownIdentifier => Self::UnknownIdentifier { sentence, field },
+            ErrorCode::OutOfRange => Self::OutOfRange { sentence, field },
+            ErrorCode::InvalidAction => Self::InvalidAction { sentence, field },
+            ErrorCode::InvalidUrl => Self::InvalidUrl { sentence, field },
+            ErrorCode::UnsupportedOrigin => Self::UnsupportedOrigin { sentence, field },
+            ErrorCode::InputTooLarge => Self::InputTooLarge { sentence, field },
+            ErrorCode::InvalidSnapshot => Self::InvalidSnapshot { sentence, field },
             ErrorCode::UnsupportedSchemaVersion => {
-                Self::UnsupportedSchemaVersion { message, field }
+                Self::UnsupportedSchemaVersion { sentence, field }
             }
-            ErrorCode::UnsupportedCapability => Self::UnsupportedCapability { message, field },
+            ErrorCode::UnsupportedCapability => Self::UnsupportedCapability { sentence, field },
         }
     }
 }
 
 impl fmt::Display for AdapterError {
     fn fmt(&self, formatter: &mut fmt::Formatter<'_>) -> fmt::Result {
-        write!(formatter, "{}: {}", self.code().as_str(), self.message())
+        write!(formatter, "{}: {}", self.code().as_str(), self.sentence())
     }
 }
 
