@@ -11,7 +11,16 @@
 //! a helper used by a single test does not become a warning under
 //! `cargo clippy -- -D warnings`.
 
-#![allow(dead_code)]
+// Test target: same relaxation as the test files. `unreachable_pub` fires on
+// helpers of a test-only module that has no external users.
+#![allow(
+    dead_code,
+    clippy::expect_used,
+    clippy::indexing_slicing,
+    clippy::panic,
+    clippy::unwrap_used,
+    unreachable_pub
+)]
 
 use std::collections::BTreeSet;
 use std::fmt::Debug;
@@ -81,7 +90,11 @@ pub fn preset_pitches(instrument_id: &str, preset_name: &str) -> Vec<OpenPitch> 
         .as_array()
         .expect("pitches must be an array")
         .iter()
-        .map(|pitch| open_pitch(pitch.as_u64().expect("pitch is an integer") as u8))
+        .map(|pitch| {
+            let value = u8::try_from(pitch.as_u64().expect("pitch is an integer"))
+                .expect("catalog pitch fits in u8");
+            open_pitch(value)
+        })
         .collect()
 }
 
@@ -160,7 +173,7 @@ pub fn position(string: u8, fret_value: u8) -> Position {
     }
 }
 
-pub fn page(
+pub const fn page(
     instrument: InstrumentState,
     chords: Vec<ChordSpec>,
     highlight: Option<ChordSpec>,
@@ -174,7 +187,7 @@ pub fn page(
     }
 }
 
-pub fn fretted_page(
+pub const fn fretted_page(
     instrument: InstrumentId,
     tuning: TuningState,
     selected: Vec<Position>,
@@ -222,7 +235,7 @@ pub fn assert_valid(result: Result<(), CoreError>) {
 }
 
 pub fn name_set(names: &[&str]) -> BTreeSet<String> {
-    names.iter().map(|name| name.to_string()).collect()
+    names.iter().map(ToString::to_string).collect()
 }
 
 pub fn keys_of(object: &serde_json::Map<String, serde_json::Value>) -> BTreeSet<String> {

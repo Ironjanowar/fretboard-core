@@ -4,6 +4,12 @@ description = "UniFFI adapter exposing the Fretboard domain to native clients."
 version.workspace = true
 edition.workspace = true
 rust-version.workspace = true
+license.workspace = true
+repository.workspace = true
+keywords.workspace = true
+categories.workspace = true
+readme.workspace = true
+
 
 [lib]
 name = "fretboard_mobile_ffi"
@@ -12,3 +18,6 @@ crate-type = ["cdylib", "rlib"]
 [dependencies]
 fretboard-core = { workspace = true }
 uniffi = { workspace = true }
+
+[lints]
+workspace = true

@@ -1,3 +1,13 @@
+// Test target: `expect`/`unwrap`, panicking assertions and direct indexing are the
+// idiom in tests, so the restriction lints that forbid them in the library are
+// relaxed here only. Every other lint, including `pedantic`, still applies.
+#![allow(
+    clippy::expect_used,
+    clippy::indexing_slicing,
+    clippy::panic,
+    clippy::unwrap_used
+)]
+
 //! Typed page-state contract for task C02 (`crates/domain`).
 //!
 //! These tests pin the typed state contract from `02-core-contract.md`

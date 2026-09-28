@@ -49,7 +49,11 @@ pub struct PitchClass(u8);
 impl PitchClass {
     /// The sharp name of this pitch class.
     pub const fn name(self) -> &'static str {
-        PITCH_CLASS_NAMES[self.0 as usize]
+        // The newtype's invariant is 0..=11, so this index cannot be out of
+        // bounds; `indexing_slicing` is allowed for exactly that reason.
+        #[allow(clippy::indexing_slicing)]
+        let name = PITCH_CLASS_NAMES[self.0 as usize];
+        name
     }
 
     /// The pitch class of one of the twelve sharp names; `None` for anything
@@ -398,6 +402,11 @@ macro_rules! stable_identifier {
             }
 
             /// Parse one of the stable catalog strings.
+            ///
+            /// # Errors
+            ///
+            /// [`CoreError::UnknownIdentifier`] when the value is not one of the
+            /// stable strings of the frozen catalog.
             pub fn parse(value: &str) -> Result<Self, CoreError> {
                 match $canonical(value) {
                     Some(known) => Ok(Self(known)),
