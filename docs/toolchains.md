@@ -24,9 +24,9 @@ Environment inspected: Linux 6.18 (x86_64), 16 cores, no `sudo`, no `/dev/kvm`.
 | Android SDK | `cmdline-tools;23.0` (build `16111833`), `platforms;android-37`, `build-tools;36.0.0`, `platform-tools` | `sdkmanager --install` + `--list_installed` |
 | Android NDK | `28.2.13676358` | the AGP 9.4 default revision; installed through `sdkmanager` |
 | compileSdk / targetSdk | `37` | highest stable platform offered by `sdkmanager`; AGP 9.4 supports up to API 37 |
-| minSdk | `26` | plan proposal (DEC-10). Requires user agreement: it sets the device floor |
+| minSdk | `29` | User decision 2026-09-28 (DEC-10): Android 10 floor, chosen over the plan's proposal of 26 |
 | cargo-ndk | not selected yet | introduced in task `C05`, where the cross-build script is written |
-| ABIs | not measured yet | `arm64-v8a` phone and `x86_64` emulator are the plan's target; the phone ABI must be read with `adb shell getprop ro.product.cpu.abilist` |
+| ABIs | `arm64-v8a` only | User decision 2026-09-28: emulator evidence is out of scope here, so `x86_64` is no longer required; the phone's ABI is confirmed by the app itself (see below) |
 
 Official compatibility sources used for the pins:
 
@@ -40,9 +40,9 @@ Official compatibility sources used for the pins:
 
 | Limitation | Consequence | Status |
 |---|---|---|
-| `/dev/kvm` is absent; the Android emulator cannot be hardware accelerated | The emulator half of the P1 gate cannot be produced on this machine | Blocker recorded; needs either host-level KVM access or real-device-only evidence |
-| No `adb` device is attached to this environment | Device API/ABI/fingerprint evidence (`adb shell getprop …`) cannot be collected here | Needs the phone reachable, or the user running the three `getprop` commands |
-| No Android emulator or system image installed | No instrumentation run in P0 | P1 concern; the P0 gate has no APK |
+| `/dev/kvm` is absent; the Android emulator cannot be hardware accelerated | No emulator run is possible on this machine | **Resolved by decision 2026-09-28:** evidence comes from the real phone only, and the missing emulator coverage is a disclosed limitation of every phase gate |
+| No `adb` device is attached to this environment | Automatic install, update and `getprop` collection are impossible here | **Resolved by decision 2026-09-28:** the user is not an Android developer and does not want an adb/device-tooling workflow. Every phase publishes a signed APK that he installs by hand, and the app itself surfaces its `Build.VERSION.SDK_INT` and `Build.SUPPORTED_ABIS` on screen so the required device facts travel with a screenshot instead of a command |
+| `x86_64` ABI no longer required | The engine AAR ships `arm64-v8a` only, which also removes a whole class of emulator-only packaging work | Consequence of the decision above |
 | `sudo` is unavailable | No system-level tool installation | Everything above was installed in user space; nothing needs root |
 | Android SDK licenses were accepted non-interactively (`sdkmanager --licenses`) as part of this bootstrap | Licenses for `platform-tools`, `platforms;android-37`, `build-tools;36.0.0`, `ndk;28.2.13676358` are accepted on this machine | Disclosed; the acceptance log is local, not committed |
 

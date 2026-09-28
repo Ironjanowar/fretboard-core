@@ -12,20 +12,19 @@ and covered by a fixture and a test.
 
 | ID | Decision | Evidence | Date |
 |---|---|---|---|
+| `CORE-D01` | This repository is MIT, matching the web application, with the same copyright line | `LICENSE` copied from `Ironjanowar/fretboard`; `license = "MIT"` in the workspace manifest | 2026-09-28 |
+| `CORE-D02` | No emulator evidence: every phase gate uses the real phone, and the missing emulator run is a disclosed limitation | User decision | 2026-09-28 |
+| `CORE-D03` | No adb workflow: each phase publishes a signed APK that the user installs by hand, and the app displays its own API level and supported ABIs so device evidence needs no command line | User decision (2 answers: "no tengo conocimiento de desarrollo Android… ¿se pueden generar APKs para probar yo?" and the emulator answer) | 2026-09-28 |
 | `DEC-09` (part 1) | Both new repositories are public, so release artifacts can be fetched without a token | `gh api repos/Ironjanowar/fretboard-core --jq .private` → `false`; same for `fretboard-android` | 2026-09-28 |
-| `DEC-10` (part 1) | Toolchain tuple locked (Rust 1.98.1, UniFFI 0.32.2, JDK 21, AGP 9.4.1, Gradle 9.8, Kotlin 2.4.20, Compose BOM 2026.09.00, NDK 28.2.13676358, compileSdk/targetSdk 37) | `docs/toolchains.md`; official AGP 9.4 release notes and Gradle compatibility matrix | 2026-09-28 |
+| `DEC-10` (parts 1 and 2) | Toolchain tuple locked (Rust 1.98.1, UniFFI 0.32.2, JDK 21.0.2, AGP 9.4.1, Gradle 9.8.0, Kotlin 2.4.20, Compose BOM 2026.09.00, NDK 28.2.13676358, compileSdk/targetSdk 37) and `minSdk 29` | `docs/toolchains.md`; official AGP 9.4 release notes and Gradle compatibility matrix; user decision on 29 | 2026-09-28 |
 
 ## Open
 
 | ID | Question | Blocks | Recommendation |
 |---|---|---|---|
-| `DEC-10` (part 2) | Is `minSdk 26` acceptable? | P1 APK device coverage | 26: Android 8.0, covers the OnePlus 13R with room to spare |
-| `DEC-08` | Who owns the persistent release signing key, and where is it backed up? | P1 signed APK | User-generated keystore, stored outside the repositories, injected in CI as a secret; the key is never created by an agent and never committed |
+| `DEC-08` | Release signing key: the user does not want to handle a keystore himself | P1 signed APK | Agent generates one dedicated release keystore in this environment, outside every repository, with a randomly generated password stored beside it and backed up as a CI secret; the user is asked once to copy the two files somewhere safe. Key material never enters the chat, the repositories or any release artifact |
 | `DEC-07` | Which exact HTTPS origin and base path are authorized for share URLs? | P6 share links | The deployed Fretboard web origin; no example hostname ships |
 | `DEC-06` | Which concrete URL/import resource limits apply? | URL import and adapter boundaries | Choose caps after a corpus review of real generated links |
-| `CORE-D01` | Which license applies to this repository? | `cargo deny` policy in `C22`, artifact license notices | User decision; the Rust ecosystem default is `MIT OR Apache-2.0`, but the license is not claimed in `Cargo.toml` until approved |
-| `CORE-D02` | Emulator evidence is impossible here (`/dev/kvm` absent); real-device-only evidence, or KVM enabled on this host? | The emulator half of the P1 gate | Real-device acceptance plus documented emulator limitation, unless KVM can be exposed |
-| `CORE-D03` | How is phone evidence collected (adb attached to this environment, or the user runs the `getprop` commands)? | Device API/ABI/fingerprint record in `D00` | Either works; adb access additionally enables install/update testing in P1 |
 
 ## Contract discrepancy gates (inherited from the plan)
 
