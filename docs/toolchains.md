@@ -25,7 +25,7 @@ Environment inspected: Linux 6.18 (x86_64), 16 cores, no `sudo`, no `/dev/kvm`.
 | Android NDK | `28.2.13676358` | the AGP 9.4 default revision; installed through the SDK CLI |
 | compileSdk / targetSdk | `37` (platform package `platforms/android-37.0`) | highest stable platform offered by the SDK CLI; AGP 9.4 supports up to API 37 |
 | minSdk | `29` | User decision 2026-09-28 (DEC-10): Android 10 floor, chosen over the plan's proposal of 26 |
-| cargo-ndk | not selected yet | introduced in task `C05`, where the cross-build script is written |
+| cargo-ndk | `4.1.2` | `cargo install cargo-ndk --locked`; drives the cross build against the pinned NDK (`ANDROID_HOME=/workspace/tools/android-sdk`) |
 | ABIs | `arm64-v8a` only | User decision 2026-09-28: emulator evidence is out of scope here, so `x86_64` is no longer required; the phone's ABI is confirmed by the app itself (see below) |
 
 Official compatibility sources used for the pins:
