@@ -58,11 +58,16 @@ use std::str::FromStr;
 
 use serde_json::Value;
 
+use crate::chord::{ChordMode, infer_chord_mode};
 use crate::instrument_catalog::{instrument_strings, keyboard_pitch_range};
+use crate::note::note_index;
 use crate::pitch::change_tuning_note;
+use crate::progression::progression_chords;
+use crate::scale::{DiatonicChord, diatonic_chords};
 use crate::state::{ChordSpec, InstrumentState, PageState, Position, TuningState, preset_tuning};
 use crate::types::{
-    Fret, InstrumentId, OpenPitch, PitchClass, PresetName, QualityId, StringIndex, Tab,
+    Fret, InstrumentId, OpenPitch, PitchClass, PresetName, ProgressionId, QualityId, ScaleId,
+    StringIndex, Tab,
 };
 
 /// One page event that changes the page state.
@@ -102,6 +107,153 @@ pub enum PageEvent {
     SetInstrument(InstrumentId),
     /// Commit a tuning draft: set the committed tuning, and nothing else.
     CommitTuning(TuningState),
+    /// Commit a key draft: replace the chords with that key's diatonic chords in
+    /// the draft's mode, and clear the highlight.
+    CommitKeys(KeysDraft),
+    /// Commit a *suggested* key: replace the chords with that key's diatonic
+    /// chords in the mode the current chords already imply.
+    ///
+    /// The suggested-key step names the key and the scale, and nothing else,
+    /// which is why the mode is inferred rather than carried: the pinned
+    /// `infer_chord_mode/1` reads it from the chords on the page.
+    CommitSuggestedKeys {
+        /// The suggested key's tonic.
+        tonic: PitchClass,
+        /// The suggested key's scale type.
+        scale: ScaleId,
+    },
+    /// Commit a progression draft: replace the chords with the progression's own
+    /// chord list, occurrences and all, and clear the highlight.
+    CommitProgression(ProgressionDraft),
+}
+
+/// The key the key modal is holding, before it is committed.
+///
+/// The draft is the client's, like the tuning draft: it is not part of
+/// [`PageState`], so an app that drops it cannot corrupt the committed page. The
+/// defaults are the pinned mount's own — C major in triads — and the modal's Open
+/// step resets to them, which is what `apply-key-modal-resets-preview-on-open`
+/// records.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub struct KeysDraft {
+    /// The selected tonic.
+    pub tonic: PitchClass,
+    /// The selected scale type.
+    pub scale: ScaleId,
+    /// The selected chord mode: triads or seventh chords.
+    pub mode: ChordMode,
+}
+
+impl Default for KeysDraft {
+    fn default() -> Self {
+        Self {
+            tonic: PitchClass::from_catalog(0),
+            scale: ScaleId::from_catalog("major"),
+            mode: ChordMode::Triad,
+        }
+    }
+}
+
+/// The progression the progression modal is holding, before it is committed.
+///
+/// The defaults are the pinned mount's own — `pop_i_v_vi_iv` in C — and the
+/// modal's Open step resets to them.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub struct ProgressionDraft {
+    /// The selected tonic.
+    pub tonic: PitchClass,
+    /// The selected progression.
+    pub progression: ProgressionId,
+}
+
+impl Default for ProgressionDraft {
+    fn default() -> Self {
+        Self {
+            tonic: PitchClass::from_catalog(0),
+            progression: ProgressionId::from_catalog("pop_i_v_vi_iv"),
+        }
+    }
+}
+
+/// One recorded step of the keys/progressions screen: the UI-only half of the
+/// evaluation transitions.
+///
+/// None of these changes the page state, and the two Apply steps are the moment a
+/// client commits the *draft* it holds (with [`PageEvent::CommitKeys`] and
+/// [`PageEvent::CommitProgression`]). The draft itself is never part of the
+/// recorded step, which is why this reader cannot produce a commit by itself.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum EvaluationDraftEvent {
+    /// Open the key modal: the draft resets to its defaults.
+    OpenKeys,
+    /// A field change of the key form: the whole draft it recorded.
+    UpdateKeys(KeysDraft),
+    /// Close the key modal, discarding the draft.
+    CloseKeys,
+    /// Commit the key draft (see [`PageEvent::CommitKeys`]).
+    ApplyKeys,
+    /// Open the progression modal: the draft resets to its defaults.
+    OpenProgressions,
+    /// A field change of the progression form: the whole draft it recorded.
+    UpdateProgressions(ProgressionDraft),
+    /// Close the progression modal, discarding the draft.
+    CloseProgressions,
+    /// Commit the progression draft (see [`PageEvent::CommitProgression`]).
+    ApplyProgressions,
+}
+
+/// Read one recorded step of the keys/progressions screen.
+///
+/// A step this reader cannot read as a *whole* draft — an unknown mode, a scale or
+/// progression the catalog does not carry, a note name that is not a note, a
+/// missing field — answers `None` rather than a partial draft, so a client never
+/// commits half a selection the user did not make.
+pub fn evaluation_draft_event(step: &Value) -> Option<EvaluationDraftEvent> {
+    if let Some(name) = step.get("event").and_then(Value::as_str) {
+        return match name {
+            "open_key_modal" => Some(EvaluationDraftEvent::OpenKeys),
+            "close_key_modal" => Some(EvaluationDraftEvent::CloseKeys),
+            "apply_key" => Some(EvaluationDraftEvent::ApplyKeys),
+            "open_progression_modal" => Some(EvaluationDraftEvent::OpenProgressions),
+            "close_progression_modal" => Some(EvaluationDraftEvent::CloseProgressions),
+            "apply_progression" => Some(EvaluationDraftEvent::ApplyProgressions),
+            _ => None,
+        };
+    }
+
+    // The two modal forms record a field change as a `change` of their own
+    // selector, with no event name — the same shape the chord form uses.
+    match step.get("selector").and_then(Value::as_str) {
+        Some("#key-form") => keys_draft(step).map(EvaluationDraftEvent::UpdateKeys),
+        Some("#progression-form") => {
+            progression_draft(step).map(EvaluationDraftEvent::UpdateProgressions)
+        }
+        _ => None,
+    }
+}
+
+/// The key draft one recorded field change carries.
+///
+/// The tonic goes through the domain's note lookup, which is what the pinned
+/// handler does with the field's own string (`Note.note_at/2` accepts the flat
+/// spellings too); the chords the draft then produces are pitch classes and stay
+/// sharp-only like every other surface.
+fn keys_draft(step: &Value) -> Option<KeysDraft> {
+    let key = step.get("value")?.get("key")?;
+    Some(KeysDraft {
+        tonic: note_index(key.get("tonic")?.as_str()?).ok()?,
+        scale: key.get("scale_type")?.as_str()?.parse().ok()?,
+        mode: key.get("chord_mode")?.as_str()?.parse().ok()?,
+    })
+}
+
+/// The progression draft one recorded field change carries.
+fn progression_draft(step: &Value) -> Option<ProgressionDraft> {
+    let progression = step.get("value")?.get("progression")?;
+    Some(ProgressionDraft {
+        tonic: note_index(progression.get("tonic")?.as_str()?).ok()?,
+        progression: progression.get("id")?.as_str()?.parse().ok()?,
+    })
 }
 
 /// One recorded step of the tuning modal: the UI-only half of the fretted
@@ -150,6 +302,11 @@ pub enum DraftEvent {
 /// * `toggle_tab` carries the target tab; an unknown value falls back to the
 ///   visualizer, exactly as the pinned decoder does.
 /// * A `change` of `#instrument-form` carries the new instrument.
+/// * `apply_suggested_key` carries the suggested key's own `tonic` and
+///   `scale_type`; the mode is not in the step and is inferred by the reducer.
+/// * The keys/progressions modal's own steps are [`evaluation_draft_event`]'s, and
+///   its two Apply steps commit the draft a client holds, exactly like the tuning
+///   modal's: neither draft is part of the recorded step.
 /// * The tuning modal's steps are [`draft_event`]'s, not page events: the
 ///   baseline pushes no patch for them, and `apply_tuning` cannot be read from
 ///   the step because the draft it commits is not in it.
@@ -166,6 +323,8 @@ pub fn page_event(step: &Value) -> Option<PageEvent> {
         Some("toggle_piano_key") => piano_key_of(step).map(PageEvent::TogglePianoKey),
         Some("clear_notes") => Some(PageEvent::ClearSelection),
         Some("toggle_tab") => Some(PageEvent::SetTab(tab_of(step))),
+        Some("apply_suggested_key") => suggested_key_of(step)
+            .map(|(tonic, scale)| PageEvent::CommitSuggestedKeys { tonic, scale }),
         Some(_) => None,
         None => submitted_chord(step)
             .map(PageEvent::AddChord)
@@ -195,6 +354,18 @@ pub fn draft_event(step: &Value) -> Option<DraftEvent> {
     }
 }
 
+/// Read the suggested-key step: the key's tonic and scale type.
+///
+/// The tonic goes through the domain's note lookup, which is what the baseline's
+/// own key form does with the field's string.
+fn suggested_key_of(step: &Value) -> Option<(PitchClass, ScaleId)> {
+    let value = step.get("value")?;
+    Some((
+        note_index(value.get("tonic")?.as_str()?).ok()?,
+        value.get("scale_type")?.as_str()?.parse().ok()?,
+    ))
+}
+
 /// Apply one page event to the state.
 ///
 /// The result is the whole next state, and an event that changes nothing returns
@@ -212,7 +383,66 @@ pub fn apply_event(state: &PageState, event: &PageEvent) -> PageState {
         PageEvent::SetTab(tab) => set_tab(state, *tab),
         PageEvent::SetInstrument(instrument) => set_instrument(state, *instrument),
         PageEvent::CommitTuning(tuning) => commit_tuning(state, tuning),
+        PageEvent::CommitKeys(draft) => commit_keys(state, *draft),
+        PageEvent::CommitSuggestedKeys { tonic, scale } => {
+            commit_suggested_keys(state, *tonic, *scale)
+        }
+        PageEvent::CommitProgression(draft) => commit_progression(state, *draft),
     }
+}
+
+/// Replace the chords with a key's diatonic chords, and clear the highlight.
+///
+/// The instrument, its tuning, the selection and the tab stay exactly as they
+/// were: the pinned handler pushes `active_chords` and `highlighted_chord` and
+/// nothing else.
+fn commit_keys(state: &PageState, draft: KeysDraft) -> PageState {
+    replace_chords(
+        state,
+        as_chords(diatonic_chords(draft.tonic, draft.scale, draft.mode)),
+    )
+}
+
+/// Replace the chords with a suggested key's diatonic chords in the mode the page
+/// already implies, and clear the highlight.
+fn commit_suggested_keys(state: &PageState, tonic: PitchClass, scale: ScaleId) -> PageState {
+    replace_chords(
+        state,
+        as_chords(diatonic_chords(
+            tonic,
+            scale,
+            infer_chord_mode(&state.chords),
+        )),
+    )
+}
+
+/// Replace the chords with a progression's own chord list, and clear the
+/// highlight.
+///
+/// The list is taken as it is: a progression that repeats a chord keeps both
+/// occurrences, because the baseline replaces `active_chords` instead of adding
+/// to it (the duplicate rejection of `add_chord/2` never sees these chords).
+fn commit_progression(state: &PageState, draft: ProgressionDraft) -> PageState {
+    replace_chords(state, progression_chords(draft.tonic, draft.progression))
+}
+
+/// A key's diatonic chords as the page's own chord list.
+fn as_chords(diatonic: Vec<DiatonicChord>) -> Vec<ChordSpec> {
+    diatonic
+        .into_iter()
+        .map(|chord| ChordSpec {
+            root: chord.root,
+            quality: chord.quality,
+        })
+        .collect()
+}
+
+/// Replace the whole chord list and clear the highlight.
+fn replace_chords(state: &PageState, chords: Vec<ChordSpec>) -> PageState {
+    let mut next = state.clone();
+    next.chords = chords;
+    next.highlight = None;
+    next
 }
 
 /// Add one occurrence, unless the identity is already there.

@@ -22,6 +22,7 @@ use std::str::FromStr;
 use serde::{Deserialize, Deserializer, Serialize, Serializer};
 
 use crate::error::CoreError;
+use crate::progression_catalog::{PROGRESSION_IDS, canonical_progression_id};
 
 /// The number of pitch classes (contract section 2).
 pub(crate) const PITCH_CLASS_COUNT: u8 = 12;
@@ -536,6 +537,33 @@ stable_identifier!(
 );
 
 catalog_identifier_list!(ScaleId, SCALE_IDS);
+
+stable_identifier!(
+    /// A validated progression identifier.
+    ///
+    /// The accepted identifiers are the frozen catalog's own fifty-nine
+    /// progression ids. The catalog tables live in [`crate::progression_catalog`]
+    /// and the parser searches that module's identifier table, so a mistyped
+    /// catalog entry and the accepted set move together; `tests/progressions.rs`
+    /// pins the whole table against the frozen export.
+    ProgressionId,
+    "progression",
+    canonical_progression_id
+);
+
+impl ProgressionId {
+    /// The table-internal constructor for the frozen catalog constants.
+    ///
+    /// The value is one of the `fixtures/oracle/catalogs.json` progression
+    /// identifiers; the catalog tables and the accepted-identifier lookup share
+    /// this one list, so a mistyped entry changes both together and is caught by
+    /// the oracle-pinned catalog tests.
+    pub(crate) const fn from_catalog(value: &'static str) -> Self {
+        Self(value)
+    }
+}
+
+catalog_identifier_list!(ProgressionId, PROGRESSION_IDS);
 
 impl ScaleId {
     /// The table-internal constructor for the frozen catalog constants.
