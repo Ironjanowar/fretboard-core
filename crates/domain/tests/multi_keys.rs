@@ -623,7 +623,7 @@ fn an_all_singleton_selection_answers_no_groups() {
     // and the answer appears, with the two singletons beside it. The pinned
     // run's answer for that input is `C major [C, C]`, `C# major [G#]` and
     // `E major [E]`.
-    let mut with_repeat = chords.clone();
+    let mut with_repeat = chords;
     with_repeat.push(chord("C", "major"));
     let groups = suggest_multi_keys(&with_repeat);
     let rendered: Vec<String> = groups.iter().map(render_group).collect();
