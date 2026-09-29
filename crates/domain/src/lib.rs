@@ -68,6 +68,7 @@
 
 mod analyzer;
 mod chord;
+mod codec;
 mod error;
 mod identify;
 mod instrument_catalog;
@@ -91,6 +92,10 @@ pub use analyzer::{Analysis, analyze_page, analyze_pitches};
 pub use chord::{
     ChordDetails, ChordMode, QualityGroup, chord_details, chord_formula, chord_interval_labels,
     chord_quality_label, grouped_qualities, infer_chord_mode, quality_from_label,
+};
+pub use codec::url::{
+    ImportedPage, QueryParams, QueryValue, RequestTarget, UrlPolicy, decode_query,
+    import_absolute_url, import_request_target, parse_request_target, query_params_to_json,
 };
 pub use error::CoreError;
 pub use identify::{
