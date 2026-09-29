@@ -45,11 +45,16 @@
 //! [`detect_preset`], [`tuning_notes`]) and the one copy of the nearest-pitch
 //! rule ([`closest_pitch`]) that the page-params codec resolves the legacy
 //! tuning notes through.
+//!
+//! `C12` added full ordered identification ([`identify_notes`],
+//! [`identify_notes_with_bass`] and the [`Interpretation`] they return) with
+//! the approved deterministic tie-break of `Contract.D03`.
 
 #![forbid(unsafe_code)]
 
 mod chord;
 mod error;
+mod identify;
 mod instrument_catalog;
 mod interval;
 mod note;
@@ -65,6 +70,10 @@ pub use chord::{
     chord_quality_label, grouped_qualities, infer_chord_mode, quality_from_label,
 };
 pub use error::CoreError;
+pub use identify::{
+    Interpretation, MatchKind, MatchSortKey, identify_notes, identify_notes_with_bass,
+    match_sort_key,
+};
 pub use instrument_catalog::{
     Instrument, InstrumentKind, PitchPreset, fretted_instruments, guitar_standard_tuning,
     guitar_tuning_preset_names, guitar_tuning_presets, instrument_frets, instrument_kind,

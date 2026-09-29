@@ -427,7 +427,10 @@ fn member_rank(semitone: u8, formula: &[u8]) -> u8 {
 /// ninth, eleventh or thirteenth offset is named as that compound interval only
 /// when the formula carries a seventh; and the altered offsets follow the
 /// source's contextual rules for the tones they replace.
-fn contextual_interval_label(semitone: u8, formula: &[u8]) -> &'static str {
+///
+/// `pub(crate)` so the identification surface (`C12`) labels a *missing*
+/// formula tone with this one copy of the rule instead of a second one.
+pub(crate) fn contextual_interval_label(semitone: u8, formula: &[u8]) -> &'static str {
     let seventh = has_seventh(formula);
     match semitone {
         0 => ROOT_LABEL,
