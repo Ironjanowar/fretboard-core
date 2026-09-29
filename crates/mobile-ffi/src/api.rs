@@ -551,6 +551,37 @@ pub fn import_url(url: String, policy: UrlPolicyDto) -> Result<PageStateDto, Ada
     }
 }
 
+/// Import one **legacy** URL: any origin, the old reader's tolerance (task `C21`).
+///
+/// This is the paste and `ACTION_SEND` path, kept deliberately apart from
+/// [`import_url`]:
+///
+/// * no origin is compared. The approved share origin does not exist yet
+///   (`DEC-07`), and the plan makes an unresolved host a gate for *sharing*, not for
+///   reading a link the user pasted. Nothing here emits a link either — `share_url`
+///   is still unimplemented (`D08`).
+/// * the query keeps the legacy codec's tolerance: unknown fields are ignored, a
+///   malformed field is defaulted, and valid siblings survive.
+///
+/// The route is still checked: a path other than the page's own is not served.
+///
+/// # Errors
+///
+/// [`AdapterError`] with `InvalidUrl` when the input is not an absolute URL, names
+/// no route this transport serves, or carries a query that cannot be decoded.
+#[uniffi::export]
+pub fn import_legacy_url(url: String) -> Result<PageStateDto, AdapterError> {
+    let imported = fretboard_core::import_legacy_url(url.as_str()).map_err(AdapterError::from)?;
+    match imported {
+        ImportedPage::Route(state) => Ok(page_state_to_dto(&state)),
+        ImportedPage::NotFound => Err(AdapterError::new(
+            ErrorCode::InvalidUrl,
+            "the URL names no route this transport serves",
+            Some("url".to_owned()),
+        )),
+    }
+}
+
 /// Encode one page as a snapshot string (task `C21`).
 ///
 /// The page is converted into the domain's typed state and handed to the domain
