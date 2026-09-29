@@ -537,6 +537,19 @@ stable_identifier!(
 
 catalog_identifier_list!(ScaleId, SCALE_IDS);
 
+impl ScaleId {
+    /// The table-internal constructor for the frozen catalog constants.
+    ///
+    /// The value is one of the `fixtures/oracle/catalogs.json` scale
+    /// identifiers; the scale catalog's tables and the accepted-identifier
+    /// lookup share this one list, so a mistyped entry changes both together
+    /// and is caught by the oracle-pinned contract tests for the scales they
+    /// exercise.
+    pub(crate) const fn from_catalog(value: &'static str) -> Self {
+        Self(value)
+    }
+}
+
 stable_identifier!(
     /// A validated instrument pitch-preset name.
     ///

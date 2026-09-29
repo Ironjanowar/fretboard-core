@@ -450,8 +450,11 @@ fn interval_mask(notes: &[PitchClass], root: PitchClass) -> u16 {
 }
 
 /// Set the bits of a formula's semitones.
+///
+/// `pub(crate)` because the scale inference (`C15`) masks the notes its degree
+/// classifier sees with this one copy of the rule.
 #[allow(clippy::arithmetic_side_effects)]
-fn formula_mask(formula: &[u8]) -> u16 {
+pub(crate) fn formula_mask(formula: &[u8]) -> u16 {
     formula
         .iter()
         .map(|semitone| 1u16 << *semitone)
@@ -459,8 +462,11 @@ fn formula_mask(formula: &[u8]) -> u16 {
 }
 
 /// Whether a semitone mask carries one semitone.
+///
+/// `pub(crate)` for the same reason as [`formula_mask`]: the scale inference
+/// asks a mask the same question.
 #[allow(clippy::arithmetic_side_effects)]
-const fn mask_has(mask: u16, semitone: u8) -> bool {
+pub(crate) const fn mask_has(mask: u16, semitone: u8) -> bool {
     mask & (1u16 << semitone) != 0
 }
 
