@@ -478,7 +478,13 @@ fn a_perfect_seven_mode_group_collapses_its_prominent_pair() {
             .collect();
         assert_eq!(notes.len(), 1, "{case}: seven modes, one note set");
 
-        member_sets.push(prominent.iter().chain(others).map(render_item).collect());
+        member_sets.push(
+            prominent
+                .iter()
+                .chain(others)
+                .map(|member| format!("{}:{}", member.tonic.name(), member.scale_type.as_str()))
+                .collect(),
+        );
     }
     assert_eq!(
         member_sets[0], member_sets[1],
