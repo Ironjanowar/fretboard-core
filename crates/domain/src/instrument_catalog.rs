@@ -21,10 +21,11 @@
 //! by `tests/instrument_catalog.rs`. Nothing is transcribed from the plan.
 //!
 //! Tuning *analysis* — detecting which preset a set of pitches matches, and
-//! editing one string to its closest pitch — belongs to a later task and is not
-//! here.
+//! editing one string against its fixed reference — lives in [`crate::pitch`]
+//! (task `C11`) and asks this catalog for the tables it needs.
 
 use crate::error::CoreError;
+use crate::pitch::note_of;
 use crate::types::{InstrumentId, OpenPitch, PitchClass, PresetName};
 
 /// Whether an instrument has strings and frets, or is a keyboard.
@@ -415,17 +416,6 @@ pub fn tuning_presets(id: InstrumentId) -> Vec<(PresetName, Vec<PitchClass>)> {
             )
         })
         .collect()
-}
-
-/// The note name of one absolute pitch: its pitch class.
-///
-/// Every pitch of the catalog is within `0..=127`, so the reduction to a pitch
-/// class is exact; the unison is returned only to keep the function total (the
-/// `% 12` remainder of any `u8` is already a pitch class).
-#[allow(clippy::arithmetic_side_effects)]
-fn note_of(pitch: OpenPitch) -> PitchClass {
-    let index = u8::from(pitch) % 12;
-    PitchClass::try_from(index).unwrap_or(PitchClass::from_catalog(0))
 }
 
 /// Every distinct preset name of the frozen catalog, in catalog order: the

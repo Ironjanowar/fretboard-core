@@ -41,9 +41,13 @@ use crate::instrument_catalog::{
     standard_tuning_notes,
 };
 use crate::state::{ChordSpec, InstrumentState, PageState, Position, TuningState};
-use crate::types::{
-    Fret, InstrumentId, OpenPitch, PITCH_CLASS_NAMES, PitchClass, PresetName, StringIndex, Tab,
-};
+use crate::types::{Fret, InstrumentId, OpenPitch, PitchClass, PresetName, StringIndex, Tab};
+
+// The nearest-pitch rule and the pitch-class view of a pitch live in `pitch.rs`
+// (task C11), which owns them for the whole crate: this codec resolves the
+// legacy `tuning` notes through that one rule instead of keeping a second copy
+// of it (`04-core-phases.md`, C08).
+use crate::pitch::{anchored_pitches, note_of};
 
 /// The reference every instrument's standard preset is named after.
 const STANDARD: &str = "Standard";
@@ -330,13 +334,8 @@ fn tokens_keeping_empty(value: &str) -> Vec<&str> {
 }
 
 /// The note name of one pitch: its pitch class, without an octave.
-///
-/// The fallback is the first name and is unreachable: a remainder below twelve is
-/// always a valid pitch class.
-#[allow(clippy::integer_division)]
 fn note_name(pitch: OpenPitch) -> &'static str {
-    let class = usize::from(u8::from(pitch) % 12);
-    PITCH_CLASS_NAMES.get(class).copied().unwrap_or("C")
+    note_of(pitch).name()
 }
 
 /// The wire label of one chord: its root followed by its quality's label.
@@ -433,37 +432,6 @@ fn decode_tuning_notes(value: &str, instrument: InstrumentId) -> Vec<PitchClass>
         Some(notes) if notes.len() == standard.len() => notes,
         _ => standard,
     }
-}
-
-/// The pitch of one pitch class that is closest to a reference pitch.
-///
-/// The candidate octaves are the reference's own octave and its neighbours; the
-/// pinned source lists them in ascending order and takes the first minimum, so a
-/// tie of six semitones deterministically resolves downwards.
-fn closest_pitch(note: PitchClass, reference: OpenPitch) -> Option<OpenPitch> {
-    let reference = i16::from(u8::from(reference));
-    #[allow(clippy::integer_division)]
-    let remainder = reference % 12;
-    let anchor = reference.saturating_sub(remainder);
-    let base = anchor.saturating_add(i16::from(u8::from(note)));
-    let candidates = [base.saturating_sub(12), base, base.saturating_add(12)];
-
-    let chosen = candidates
-        .into_iter()
-        .min_by_key(|candidate| candidate.saturating_sub(reference).unsigned_abs())?;
-    let byte = u8::try_from(chosen).ok()?;
-    OpenPitch::try_from(byte).ok()
-}
-
-/// Resolve note names against the standard pitches of the instrument: every name
-/// becomes the pitch of its class nearest that string's standard pitch.
-fn anchored_pitches(notes: &[PitchClass], instrument: InstrumentId) -> Vec<OpenPitch> {
-    let standard = standard_pitches(instrument).unwrap_or(&[]);
-    notes
-        .iter()
-        .zip(standard.iter())
-        .filter_map(|(note, reference)| closest_pitch(*note, *reference))
-        .collect()
 }
 
 /// Decode the fretted tuning of a page: `pitches` when it is present, the legacy

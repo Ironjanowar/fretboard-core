@@ -40,6 +40,11 @@
 //! [`note_fill`] and its colour half [`identity_slots`]). Scale, progression,
 //! derivation and analyzer support arrive in later tasks, each of them tests
 //! first.
+//!
+//! `C11` added fixed-reference pitch editing ([`change_tuning_note`],
+//! [`detect_preset`], [`tuning_notes`]) and the one copy of the nearest-pitch
+//! rule ([`closest_pitch`]) that the page-params codec resolves the legacy
+//! tuning notes through.
 
 #![forbid(unsafe_code)]
 
@@ -49,6 +54,7 @@ mod instrument_catalog;
 mod interval;
 mod note;
 mod page_params;
+mod pitch;
 mod reducer;
 mod state;
 mod surface;
@@ -68,6 +74,7 @@ pub use instrument_catalog::{
 pub use interval::interval_name;
 pub use note::{chromatic_scale, note_at, note_index};
 pub use page_params::{decode_page_params, decoded_page, encode_page_params};
+pub use pitch::{change_tuning_note, closest_pitch, detect_preset, tuning_notes};
 pub use reducer::{PageEvent, apply_event, page_event};
 pub use state::{
     ChordSpec, InstrumentState, PageState, Position, TuningState, default_state, preset_tuning,
