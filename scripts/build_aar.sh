@@ -19,6 +19,9 @@
 set -euo pipefail
 
 REPO_ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
+# The exported API revision and the snapshot schema are read from the frozen
+# contract, so the artifact metadata cannot drift from the fixture (CORE-D08).
+CONTRACT_FILE="${REPO_ROOT}/fixtures/contract/api-v2.json"
 OUT_DIR="${1:-${REPO_ROOT}/dist}"
 NDK_VERSION="28.2.13676358"
 UNIFFI_RUNTIME_DEPENDENCY="net.java.dev.jna:jna:5.17.0"
@@ -78,8 +81,9 @@ CARGO_NDK_VERSION="$(cargo ndk --version | cut -d' ' -f2)"
 KOTLIN_VERSION="$("${KOTLIN_HOME}/bin/kotlinc" -version 2>&1 | sed -n 's/.*kotlinc-jvm \([0-9.]*\).*/\1/p')"
 JAVA_VERSION="$("${JAVA_HOME}/bin/java" -version 2>&1 | sed -n '1s/.*"\(.*\)".*/\1/p')"
 
-python3 - "${WORK}/aar/META-INF/fretboard-engine/metadata.json" <<PY
+python3 - "${WORK}/aar/META-INF/fretboard-engine/metadata.json" "${CONTRACT_FILE}" <<PY
 import json, sys
+CONTRACT = json.load(open(sys.argv[2], encoding="utf-8"))
 metadata = {
     "artifact_version": "${ARTIFACT_VERSION}",
     "source_commit": "${SOURCE_COMMIT}",
@@ -92,8 +96,8 @@ metadata = {
         "java": "${JAVA_VERSION}",
     },
     "uniffi_runtime_dependency": "${UNIFFI_RUNTIME_DEPENDENCY}",
-    "api_version": 1,
-    "snapshot_schema_version": 1,
+    "api_version": CONTRACT["api_version"],
+    "snapshot_schema_version": CONTRACT["snapshot_schema_version"],
     "binding_package": "${BINDING_PACKAGE}",
     "abis": ["${ABI}"],
     "min_sdk": int("${MIN_SDK}"),

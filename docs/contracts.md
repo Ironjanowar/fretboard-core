@@ -22,7 +22,7 @@ implements them, and this file names the versioned boundary.
 |---|---|---|---|
 | Oracle fixture schema | `1` | task `C01` (`fixtures/oracle/manifest.json`, `fixture_schema_version`) | open until fixtures exist |
 | Snapshot schema (`{"schema_version": 1, "page": …}`) | `1` | task `C02`/`C20` (`fixtures/contract/snapshot-v1.json`) | open |
-| Adapter API (`fixtures/contract/api-v1.json`, `api_version`) | `1` | task `C02`, implemented by `C04` | open |
+| Adapter API (revision 1: `fixtures/contract/api-v1.json`; revision 2: `api-v2.json`) | `2` | revision 1 frozen by `C02`/`C04`; revision 2 (`CORE-D08`) adds the P2 endpoints and the first declared capability set | open |
 | Generated binding package | `dev.ironjanowar.fretboard.core` | task `C04` (`crates/mobile-ffi/uniffi.toml`) | open |
 | Engine artifact | `fretboard-engine-<version>.aar` + SHA-256 | task `C05` | open |
 

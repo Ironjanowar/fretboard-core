@@ -30,7 +30,7 @@ Artifact metadata fields (frozen, snake_case, top level of both JSON documents):
     source_commit              str    40-char lowercase hex core commit
     tool_versions              object non-empty map of tool name -> version string
     uniffi_runtime_dependency  str    Maven coordinates "group:artifact:version"
-    api_version                int    frozen adapter API version (currently 1)
+    api_version                int    frozen adapter API version (currently 2)
     snapshot_schema_version    int    frozen snapshot schema version (currently 1)
     binding_package            str    "dev.ironjanowar.fretboard.core" (uniffi.toml)
     abis                       list   ABI directory names, e.g. ["arm64-v8a"]
@@ -84,7 +84,7 @@ TOOL_VERSIONS = {
     "kotlin": "2.4.20",
 }
 UNIFFI_RUNTIME_DEPENDENCY = "net.java.dev.jna:jna:5.17.0"
-API_VERSION = 1
+API_VERSION = 2
 SNAPSHOT_SCHEMA_VERSION = 1
 BINDING_PACKAGE = "dev.ironjanowar.fretboard.core"
 ABI_ARM64 = "arm64-v8a"
@@ -411,7 +411,7 @@ class MetadataAgreementTests(CheckAarTestCase):
         self._rejected_for_embedded(min_sdk=21)
 
     def test_api_version_disagreeing_with_the_artifact_contents_is_rejected(self):
-        self._rejected_for_embedded(api_version=2)
+        self._rejected_for_embedded(api_version=3)
 
     def test_snapshot_schema_version_disagreeing_with_the_artifact_contents_is_rejected(
         self,
