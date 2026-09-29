@@ -303,6 +303,9 @@ pub(crate) fn page_event_from_dto(event: &PageEventDto) -> Result<PageEvent, Ada
         PageEventDto::ToggleNote { position } => {
             Ok(PageEvent::ToggleNote(position_from_dto(*position)?))
         }
+        PageEventDto::TogglePianoKey { pitch } => Ok(PageEvent::TogglePianoKey(
+            OpenPitch::try_from(*pitch).map_err(AdapterError::from)?,
+        )),
         PageEventDto::ClearSelection => Ok(PageEvent::ClearSelection),
         PageEventDto::SetTab { tab } => Ok(PageEvent::SetTab(tab_from_dto(*tab))),
         PageEventDto::SetInstrument { instrument } => {

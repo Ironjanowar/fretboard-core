@@ -98,6 +98,24 @@ pub fn quality_groups() -> Vec<QualityGroupDto> {
     quality_groups_to_dto()
 }
 
+/// The preset names of an instrument, in catalog order; empty for the piano.
+///
+/// This is the enumeration a client's preset picker reads instead of carrying a
+/// hand-written list of its own: the names are the frozen catalog's, in the
+/// frozen order, per instrument, so a name a client offers is one
+/// [`detect_tuning_preset`](crate::detect_tuning_preset) can answer and
+/// [`select_tuning_preset`](crate::select_tuning_preset) can select. It closes
+/// the gap `A09` hit: the adapter exported `detect_tuning_preset` but no way to
+/// enumerate the names it could detect.
+#[uniffi::export]
+#[must_use]
+pub fn presets(instrument: InstrumentDto) -> Vec<String> {
+    fretboard_core::preset_names(instrument_from_dto(instrument))
+        .iter()
+        .map(ToString::to_string)
+        .collect()
+}
+
 /// Apply one page event and return the page it produces.
 ///
 /// A tap acts on the state the client already holds: the event is converted, the

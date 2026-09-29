@@ -506,6 +506,17 @@ pub enum PageEventDto {
         /// The marked position.
         position: PositionDto,
     },
+    /// Toggle one absolute key of the piano on its analyzer tab: add it, or
+    /// remove it when it is already selected.
+    ///
+    /// `pitch` is the key's absolute pitch. A value outside the frozen keyboard
+    /// range (`48..=83`) is a typed no-op, and so is a toggle on a page that is
+    /// not the piano or is not on the analyzer tab — the client counts no patch,
+    /// exactly as the pinned handler pushes none.
+    TogglePianoKey {
+        /// The absolute pitch of the key.
+        pitch: u8,
+    },
     /// Clear the selection, keeping the instrument, its tuning and the chords.
     ClearSelection,
     /// Switch to this tab.

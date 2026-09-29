@@ -47,8 +47,8 @@ uniffi::setup_scaffolding!();
 pub use api::{
     analyze_page, analyze_pitches, apply_page_event, change_tuning_note, change_tuning_string,
     chord_color_slots, chord_details, default_state, detect_tuning_preset, fretted_surface,
-    instruments, keyboard_surface, open_tuning_draft, quality_groups, select_tuning_preset,
-    tuning_notes, validate_state,
+    instruments, keyboard_surface, open_tuning_draft, presets, quality_groups,
+    select_tuning_preset, tuning_notes, validate_state,
 };
 pub use dto::{
     AdapterError, AnalysisDto, ChordDetailsDto, ChordDto, ErrorCode, FrettedSurfaceDto,
