@@ -4,11 +4,14 @@
 //! clients call through generated bindings. It contains no musical rule: every
 //! semantic decision belongs to `fretboard_core`.
 //!
-//! P1 (task C04) exports the first typed surface, deliberately small:
+//! P1 (task C04) exported the first typed surface, deliberately small:
 //! [`default_state`], [`validate_state`] and [`chord_details`], with the DTOs of
-//! [`dto`]. There is no string-in/string-out `execute` dispatcher — strings
-//! cross the boundary only as encoded URLs or snapshots, in later tasks — and
-//! no reducer yet.
+//! [`dto`]. The P2 integration added what the visualizer phase needs — the
+//! catalogs ([`instruments`], [`quality_groups`]), the page events
+//! ([`apply_page_event`]) and the surfaces ([`fretted_surface`],
+//! [`keyboard_surface`], [`chord_color_slots`]). There is still no
+//! string-in/string-out `execute` dispatcher, and no URL or snapshot codec:
+//! strings cross the boundary only through those codecs, in later tasks.
 //!
 //! The generated binding package is configured by `uniffi.toml`
 //! (`dev.ironjanowar.fretboard.core`); generated Kotlin is a build output of a
@@ -33,8 +36,13 @@ mod dto;
 // package name is configured separately in `uniffi.toml`.
 uniffi::setup_scaffolding!();
 
-pub use api::{chord_details, default_state, validate_state};
+pub use api::{
+    apply_page_event, chord_color_slots, chord_details, default_state, fretted_surface,
+    instruments, keyboard_surface, quality_groups, validate_state,
+};
 pub use dto::{
-    AdapterError, ChordDetailsDto, ChordDto, ErrorCode, InstrumentDto, InstrumentStateDto,
-    PageStateDto, PositionDto, TabDto, TuningDto,
+    AdapterError, ChordDetailsDto, ChordDto, ErrorCode, FrettedSurfaceDto, InstrumentDefinitionDto,
+    InstrumentDto, InstrumentKindDto, InstrumentStateDto, KeyboardKeyDto, KeyboardSurfaceDto,
+    NoteFillDto, PageEventDto, PageStateDto, PositionDto, QualityDto, QualityGroupDto,
+    SurfaceCellDto, SurfaceRowDto, TabDto, TuningDto,
 };

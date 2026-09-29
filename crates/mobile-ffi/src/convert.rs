@@ -13,13 +13,16 @@
 //! so the value a client gets is exactly the domain's canonical value.
 
 use fretboard_core::{
-    ChordDetails, ChordSpec, CoreError, Fret, InstrumentId, InstrumentState, OpenPitch, PageState,
-    PitchClass, Position, PresetName, QualityId, StringIndex, Tab, TuningState,
+    ChordDetails, ChordSpec, CoreError, Fret, InstrumentId, InstrumentKind, InstrumentState,
+    NoteFill, OpenPitch, PageEvent, PageState, PitchClass, Position, PresetName, QualityId,
+    StringIndex, SurfaceCell, Tab, TuningState,
 };
 
 use crate::dto::{
-    AdapterError, ChordDetailsDto, ChordDto, ErrorCode, InstrumentDto, InstrumentStateDto,
-    PageStateDto, PositionDto, TabDto, TuningDto,
+    AdapterError, ChordDetailsDto, ChordDto, ErrorCode, FrettedSurfaceDto, InstrumentDefinitionDto,
+    InstrumentDto, InstrumentKindDto, InstrumentStateDto, KeyboardKeyDto, KeyboardSurfaceDto,
+    NoteFillDto, PageEventDto, PageStateDto, PositionDto, QualityDto, QualityGroupDto,
+    SurfaceCellDto, SurfaceRowDto, TabDto, TuningDto,
 };
 
 impl From<CoreError> for AdapterError {
@@ -237,5 +240,158 @@ const fn tab_to_dto(tab: Tab) -> TabDto {
     match tab {
         Tab::Visualizer => TabDto::Visualizer,
         Tab::Analyzer => TabDto::Analyzer,
+    }
+}
+
+/// The adapter's projection of the instrument catalog, in catalog order.
+#[must_use]
+pub(crate) fn instrument_definitions_to_dto() -> Vec<InstrumentDefinitionDto> {
+    fretboard_core::instruments()
+        .iter()
+        .map(|instrument| InstrumentDefinitionDto {
+            instrument: instrument_to_dto(instrument.id),
+            name: instrument.label.to_owned(),
+            kind: match instrument.kind {
+                InstrumentKind::Fretted => InstrumentKindDto::Fretted,
+                InstrumentKind::Keyboard => InstrumentKindDto::Keyboard,
+            },
+            strings: instrument.strings.unwrap_or_default(),
+            frets: instrument.frets,
+            standard_pitches: fretboard_core::standard_pitches(instrument.id).map_or_else(
+                |_error| Vec::new(),
+                |pitches| pitches.iter().copied().map(u8::from).collect(),
+            ),
+        })
+        .collect()
+}
+
+/// The adapter's projection of the chord-quality groups, in catalog order.
+#[must_use]
+pub(crate) fn quality_groups_to_dto() -> Vec<QualityGroupDto> {
+    fretboard_core::grouped_qualities()
+        .iter()
+        .map(|group| QualityGroupDto {
+            group: group.group.to_owned(),
+            qualities: group
+                .qualities
+                .iter()
+                .map(|quality| QualityDto {
+                    quality: quality.as_str().to_owned(),
+                    label: fretboard_core::chord_quality_label(*quality).to_owned(),
+                })
+                .collect(),
+        })
+        .collect()
+}
+
+/// The domain's page event for one adapter event.
+///
+/// # Errors
+///
+/// [`ErrorCode::OutOfRange`] when an occurrence index does not fit this platform,
+/// and whatever the chord conversion reports for an unknown identity.
+pub(crate) fn page_event_from_dto(event: &PageEventDto) -> Result<PageEvent, AdapterError> {
+    match event {
+        PageEventDto::AddChord { chord } => Ok(PageEvent::AddChord(chord_from_dto(chord)?)),
+        PageEventDto::RemoveChord { index } => Ok(PageEvent::RemoveChord {
+            index: occurrence_index(*index)?,
+        }),
+        PageEventDto::ClearAllChords => Ok(PageEvent::ClearAllChords),
+        PageEventDto::HighlightChord { index } => Ok(PageEvent::HighlightChord {
+            index: occurrence_index(*index)?,
+        }),
+    }
+}
+
+/// One occurrence index, checked.
+fn occurrence_index(index: u64) -> Result<usize, AdapterError> {
+    usize::try_from(index).map_err(|_error| {
+        AdapterError::new(
+            ErrorCode::OutOfRange,
+            "the occurrence index is out of range",
+            Some("index".to_owned()),
+        )
+    })
+}
+
+/// The adapter's projection of a fretted page's surface.
+///
+/// The rows, their notes and their memberships come from the domain; the adapter
+/// only spells them out. A membership is written as the *colour slot* of the
+/// claiming chord, so the client indexes its own palette and never re-derives
+/// which colour an occurrence carries.
+///
+/// # Errors
+///
+/// [`ErrorCode::InvalidState`] when the page is the piano, which has no fretted
+/// surface, and whatever the state conversion reports.
+pub(crate) fn fretted_surface_to_dto(state: &PageState) -> Result<FrettedSurfaceDto, AdapterError> {
+    let rows = fretboard_core::fretted_surface(state).map_err(AdapterError::from)?;
+
+    Ok(FrettedSurfaceDto {
+        rows: rows
+            .iter()
+            .map(|row| SurfaceRowDto {
+                cells: row
+                    .iter()
+                    .map(|cell| surface_cell_to_dto(state, cell))
+                    .collect(),
+            })
+            .collect(),
+    })
+}
+
+/// The adapter's projection of a page's keyboard surface.
+#[must_use]
+pub(crate) fn keyboard_surface_to_dto(state: &PageState) -> KeyboardSurfaceDto {
+    KeyboardSurfaceDto {
+        keys: fretboard_core::keyboard_surface(state)
+            .iter()
+            .map(|key| KeyboardKeyDto {
+                pitch: u8::from(key.pitch),
+                note: key.note.name().to_owned(),
+                memberships: slots_of(state, &key.memberships),
+                fill: note_fill_to_dto(fretboard_core::note_fill_of(state, &key.memberships)),
+            })
+            .collect(),
+    }
+}
+
+/// The adapter's projection of the colour slot of every active occurrence.
+#[must_use]
+pub(crate) fn chord_slots_to_dto(state: &PageState) -> Vec<u64> {
+    fretboard_core::identity_slots(&state.chords)
+        .iter()
+        .map(|slot| u64::try_from(*slot).unwrap_or_default())
+        .collect()
+}
+
+/// One surface cell, with its memberships as colour slots and its fill.
+fn surface_cell_to_dto(state: &PageState, cell: &SurfaceCell) -> SurfaceCellDto {
+    SurfaceCellDto {
+        fret: u8::from(cell.fret),
+        note: cell.note.name().to_owned(),
+        memberships: slots_of(state, &cell.memberships),
+        fill: note_fill_to_dto(fretboard_core::note_fill_of(state, &cell.memberships)),
+    }
+}
+
+/// The colour slot of every identity in a membership list, in order and with
+/// repeats, as the domain answers it.
+fn slots_of(state: &PageState, memberships: &[ChordSpec]) -> Vec<u64> {
+    memberships
+        .iter()
+        .filter_map(|spec| fretboard_core::slot_of(&state.chords, spec))
+        .map(|slot| u64::try_from(slot).unwrap_or_default())
+        .collect()
+}
+
+/// The adapter's projection of one note fill.
+fn note_fill_to_dto(fill: NoteFill) -> NoteFillDto {
+    match fill {
+        NoteFill::Slot(slot) => NoteFillDto::Slot {
+            slot: u64::try_from(slot).unwrap_or_default(),
+        },
+        NoteFill::Overlap => NoteFillDto::Overlap,
     }
 }

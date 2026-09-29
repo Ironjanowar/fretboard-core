@@ -19,5 +19,11 @@ crate-type = ["cdylib", "rlib"]
 fretboard-core = { workspace = true }
 uniffi = { workspace = true }
 
+[dev-dependencies]
+# The oracle fixtures are JSON; reading them in the boundary tests needs a JSON
+# reader. Test-only, and the same pinned `serde_json` the domain already uses at
+# runtime (CORE-D04).
+serde_json = "1"
+
 [lints]
 workspace = true
