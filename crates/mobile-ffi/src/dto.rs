@@ -540,6 +540,40 @@ pub enum PageEventDto {
         /// The edited tuning to commit.
         tuning: TuningDto,
     },
+    /// Commit a key draft: replace the chords with that key's diatonic chords in
+    /// the draft's mode, and clear the highlight.
+    ///
+    /// The draft itself is UI-only, like the tuning draft: a client holds its
+    /// three fields and hands the whole value over here on Apply.
+    CommitKeys {
+        /// The draft's tonic, as a note name.
+        tonic: String,
+        /// The draft's scale type identifier.
+        scale: String,
+        /// The draft's chord mode.
+        mode: ChordModeDto,
+    },
+    /// Commit a *suggested* key: replace the chords with that key's diatonic
+    /// chords in the mode the current chords already imply, and clear the
+    /// highlight.
+    ///
+    /// The mode is deliberately absent: the reducer infers it from the chords on
+    /// the page, exactly as the pinned handler does, so a client never computes
+    /// it.
+    CommitSuggestedKeys {
+        /// The suggested key's tonic, as a note name.
+        tonic: String,
+        /// The suggested key's scale type identifier.
+        scale: String,
+    },
+    /// Commit a progression draft: replace the chords with the progression's own
+    /// chord list, occurrences and all, and clear the highlight.
+    CommitProgression {
+        /// The draft's tonic, as a note name.
+        tonic: String,
+        /// The progression's catalog identifier.
+        progression: String,
+    },
 }
 
 /// One identification of a chord answer, as the analyzer shows it.
@@ -669,4 +703,155 @@ pub struct KeyboardKeyDto {
 pub struct KeyboardSurfaceDto {
     /// The keys of the surface.
     pub keys: Vec<KeyboardKeyDto>,
+}
+
+/// The chord mode of the key modal: triads or seventh chords.
+///
+/// The two names are the frozen wire spellings
+/// (`fixtures/oracle/page-events.jsonl` records `triad` and `seventh`), so a
+/// client branches on the value instead of guessing a mode.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, uniffi::Enum)]
+pub enum ChordModeDto {
+    /// Triad qualities.
+    Triad,
+    /// Seventh qualities.
+    Seventh,
+}
+
+impl ChordModeDto {
+    /// The stable wire string of this mode.
+    pub const fn as_str(self) -> &'static str {
+        match self {
+            Self::Triad => "triad",
+            Self::Seventh => "seventh",
+        }
+    }
+
+    /// Parse one of the two stable mode wire strings.
+    ///
+    /// # Errors
+    ///
+    /// [`ErrorCode::UnknownIdentifier`] when the value is not one of `triad` and
+    /// `seventh`.
+    pub fn parse(value: &str) -> Result<Self, AdapterError> {
+        match value {
+            "triad" => Ok(Self::Triad),
+            "seventh" => Ok(Self::Seventh),
+            _ => Err(AdapterError::new(
+                ErrorCode::UnknownIdentifier,
+                "unknown catalog identifier: chord_mode",
+                Some("chord_mode".to_string()),
+            )),
+        }
+    }
+}
+
+/// One candidate key crossing the boundary, as the key panel shows it.
+///
+/// The four fields are everything the panel renders and everything the grouping
+/// reads: a suggestion is displayed by its tonic, its scale, the score it earned
+/// and the total the score is out of. The diatonic chords a suggestion was
+/// scored against are *not* carried here — the key modal's preview is the
+/// separate [`crate::diatonic_chords`] entry point, which answers the same key in
+/// the mode the modal holds.
+#[derive(Debug, Clone, PartialEq, Eq, uniffi::Record)]
+pub struct KeySuggestionDto {
+    /// The key's tonic, as a note name.
+    pub tonic: String,
+    /// The key's scale type identifier.
+    pub scale: String,
+    /// How many input occurrences the key's diatonic triads explain.
+    pub score: u64,
+    /// How many chords the input carried, occurrences included.
+    pub total: u64,
+}
+
+/// One display row of the key panel.
+///
+/// The rows are the baseline's own: a suggestion shown on its own, or a
+/// collapsed group of relative modes. A client renders a row, it never re-groups
+/// a suggestion list.
+#[derive(Debug, Clone, PartialEq, Eq, uniffi::Enum)]
+pub enum KeyRowDto {
+    /// One suggestion, shown on its own.
+    Single {
+        /// The suggestion of the row.
+        item: KeySuggestionDto,
+    },
+    /// A collapsed group of relative modes: the prominent pair and the others.
+    Group {
+        /// The group's prominent entries: the major and the relative minor, in
+        /// that order.
+        prominent: Vec<KeySuggestionDto>,
+        /// Every other member of the group, in the input's order.
+        others: Vec<KeySuggestionDto>,
+    },
+}
+
+/// One displayed multi-key group: the key that explains the group and the
+/// chords it displays.
+///
+/// `key` is absent for the final group of unmatched chords — the occurrences no
+/// candidate key contains. `chords` is the key's **full** displayed membership:
+/// every input occurrence whose notes fit the key, in input order, with repeats,
+/// so one chord can appear in two groups.
+#[derive(Debug, Clone, PartialEq, Eq, uniffi::Record)]
+pub struct MultiKeyGroupDto {
+    /// The group's key, or nothing for the group of unmatched chords.
+    pub key: Option<KeySuggestionDto>,
+    /// The key's full displayed chord membership, in input order.
+    pub chords: Vec<ChordDto>,
+}
+
+/// One degree specification of a progression definition.
+///
+/// `degree` is the scale degree (1-7), `accidental` the semitone offset from the
+/// degree's diatonic root (-1 flattens, +1 sharpens, 0 is the diatonic note) and
+/// `quality` an explicit chord quality that overrides the diatonic one.
+#[derive(Debug, Clone, PartialEq, Eq, uniffi::Record)]
+pub struct DegreeDto {
+    /// The scale degree, 1-7.
+    pub degree: u8,
+    /// The semitone offset from the degree's diatonic root.
+    pub accidental: i8,
+    /// The explicit chord quality identifier, or nothing for the scale's own.
+    pub quality: Option<String>,
+}
+
+/// One progression of the frozen catalog, as the picker and the modal show it.
+///
+/// Every field is the catalog's own value: `name` is also the label the modal
+/// shows (`Contract.D07` ports the prose verbatim), `example_key` stays the text
+/// the catalog stores (the one flat name included) and `degrees` is the
+/// unresolved degree specification, not the chord list — the chords of one
+/// progression in one tonic come from [`crate::progression_chords`].
+#[derive(Debug, Clone, PartialEq, Eq, uniffi::Record)]
+pub struct ProgressionDto {
+    /// The stable catalog identifier.
+    pub id: String,
+    /// The display name, which is also the label.
+    pub name: String,
+    /// The display category.
+    pub category: String,
+    /// The genre note.
+    pub genre: String,
+    /// The description note.
+    pub description: String,
+    /// The example key the catalog stores for this progression.
+    pub example_key: String,
+    /// The scale type the degrees are read in.
+    pub scale: String,
+    /// The degree specifications, in playing order.
+    pub degrees: Vec<DegreeDto>,
+    /// The notable songs note.
+    pub notable_songs: Vec<String>,
+}
+
+/// One display group of progressions, in catalog display order.
+#[derive(Debug, Clone, PartialEq, Eq, uniffi::Record)]
+pub struct ProgressionGroupDto {
+    /// The group's display (and catalog) category name.
+    pub category: String,
+    /// The group's progressions, in display order.
+    pub progressions: Vec<ProgressionDto>,
 }

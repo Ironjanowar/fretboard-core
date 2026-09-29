@@ -12,6 +12,11 @@ The artifact carries a copy of the published metadata at
 ``META-INF/fretboard-engine/metadata.json``, so the sidecar is checked against
 the artifact *bytes* and not only against the filename. The ten frozen metadata
 fields are listed in ``FROZEN_FIELDS`` below and must agree everywhere.
+
+The checker is manifest-driven: it validates the *shape* of ``api_version`` and
+that the sidecar and the embedded copy agree, but the frozen revision itself
+(currently 5, ``fixtures/contract/api-v5.json``) is the caller's value, read by
+``scripts/build_aar.sh`` from the contract and pinned in the test suite.
 """
 
 from __future__ import annotations

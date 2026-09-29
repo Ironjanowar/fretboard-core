@@ -13,16 +13,20 @@
 //! so the value a client gets is exactly the domain's canonical value.
 
 use fretboard_core::{
-    Analysis, ChordDetails, ChordSpec, CoreError, Fret, InstrumentId, InstrumentKind,
-    InstrumentState, Interpretation, NoteFill, OpenPitch, PageEvent, PageState, PitchClass,
-    Position, PresetName, QualityId, StringIndex, SurfaceCell, Tab, TuningState,
+    Analysis, ChordDetails, ChordMode, ChordSpec, CoreError, Degree, DiatonicChord, Fret,
+    InstrumentId, InstrumentKind, InstrumentState, Interpretation, KeyRow, KeySuggestion,
+    KeysDraft, MultiKeyGroup, NoteFill, OpenPitch, PageEvent, PageState, PitchClass, Position,
+    PresetName, Progression, ProgressionDraft, ProgressionGroup, ProgressionId, QualityId, ScaleId,
+    StringIndex, SurfaceCell, Tab, TuningState, note_index,
 };
 
 use crate::dto::{
-    AdapterError, AnalysisDto, ChordDetailsDto, ChordDto, ErrorCode, FrettedSurfaceDto,
-    InstrumentDefinitionDto, InstrumentDto, InstrumentKindDto, InstrumentStateDto,
-    InterpretationDto, KeyboardKeyDto, KeyboardSurfaceDto, NoteFillDto, PageEventDto, PageStateDto,
-    PositionDto, QualityDto, QualityGroupDto, SurfaceCellDto, SurfaceRowDto, TabDto, TuningDto,
+    AdapterError, AnalysisDto, ChordDetailsDto, ChordDto, ChordModeDto, DegreeDto, ErrorCode,
+    FrettedSurfaceDto, InstrumentDefinitionDto, InstrumentDto, InstrumentKindDto,
+    InstrumentStateDto, InterpretationDto, KeyRowDto, KeySuggestionDto, KeyboardKeyDto,
+    KeyboardSurfaceDto, MultiKeyGroupDto, NoteFillDto, PageEventDto, PageStateDto, PositionDto,
+    ProgressionDto, ProgressionGroupDto, QualityDto, QualityGroupDto, SurfaceCellDto,
+    SurfaceRowDto, TabDto, TuningDto,
 };
 
 impl From<CoreError> for AdapterError {
@@ -314,6 +318,21 @@ pub(crate) fn page_event_from_dto(event: &PageEventDto) -> Result<PageEvent, Ada
         PageEventDto::CommitTuning { tuning } => {
             Ok(PageEvent::CommitTuning(tuning_from_dto(tuning)?))
         }
+        PageEventDto::CommitKeys { tonic, scale, mode } => Ok(PageEvent::CommitKeys(KeysDraft {
+            tonic: tonic_from_wire(tonic)?,
+            scale: scale_from_wire(scale)?,
+            mode: chord_mode_from_dto(*mode),
+        })),
+        PageEventDto::CommitSuggestedKeys { tonic, scale } => Ok(PageEvent::CommitSuggestedKeys {
+            tonic: tonic_from_wire(tonic)?,
+            scale: scale_from_wire(scale)?,
+        }),
+        PageEventDto::CommitProgression { tonic, progression } => {
+            Ok(PageEvent::CommitProgression(ProgressionDraft {
+                tonic: tonic_from_wire(tonic)?,
+                progression: progression_from_wire(progression)?,
+            }))
+        }
     }
 }
 
@@ -475,5 +494,166 @@ fn interpretation_to_dto(entry: &Interpretation) -> InterpretationDto {
             .map_or_else(String::new, |bass| bass.name().to_owned()),
         inversion: entry.inversion,
         slash_label: entry.slash_label.clone().unwrap_or_default(),
+    }
+}
+
+/// The domain chord mode of a mode DTO.
+pub(crate) const fn chord_mode_from_dto(mode: ChordModeDto) -> ChordMode {
+    match mode {
+        ChordModeDto::Triad => ChordMode::Triad,
+        ChordModeDto::Seventh => ChordMode::Seventh,
+    }
+}
+
+/// The domain pitch class of a wire note name.
+///
+/// The name goes through the domain's own note lookup, which is the rule the
+/// reducer's readers use: the twelve wire spellings answer, and so do the flat
+/// aliases the catalog stores as `example_key` (a flat name is a spelling of a
+/// pitch class, and the class is what the domain carries).
+///
+/// # Errors
+///
+/// [`ErrorCode::UnknownIdentifier`] when the name is not a note.
+pub(crate) fn tonic_from_wire(name: &str) -> Result<PitchClass, AdapterError> {
+    note_index(name).map_err(AdapterError::from)
+}
+
+/// The domain scale identifier of a wire scale identifier.
+///
+/// # Errors
+///
+/// [`ErrorCode::UnknownIdentifier`] when the value is not a catalog scale.
+pub(crate) fn scale_from_wire(scale: &str) -> Result<ScaleId, AdapterError> {
+    scale.parse::<ScaleId>().map_err(AdapterError::from)
+}
+
+/// The domain progression identifier of a wire progression identifier.
+///
+/// # Errors
+///
+/// [`ErrorCode::UnknownIdentifier`] when the value is not a catalog
+/// progression.
+pub(crate) fn progression_from_wire(progression: &str) -> Result<ProgressionId, AdapterError> {
+    progression
+        .parse::<ProgressionId>()
+        .map_err(AdapterError::from)
+}
+
+/// One wire count as a `usize`.
+///
+/// # Errors
+///
+/// [`ErrorCode::OutOfRange`] when the value does not fit this platform.
+fn wire_count(value: u64, field: &str) -> Result<usize, AdapterError> {
+    usize::try_from(value).map_err(|_error| {
+        AdapterError::new(
+            ErrorCode::OutOfRange,
+            "the count does not fit this platform",
+            Some(field.to_owned()),
+        )
+    })
+}
+
+/// The chord DTO of a domain diatonic chord.
+pub(crate) fn diatonic_chord_to_dto(chord: &DiatonicChord) -> ChordDto {
+    ChordDto {
+        root: chord.root.name().to_owned(),
+        quality: chord.quality.as_str().to_owned(),
+    }
+}
+
+/// The key suggestion DTO of a domain key suggestion.
+pub(crate) fn key_suggestion_to_dto(suggestion: &KeySuggestion) -> KeySuggestionDto {
+    KeySuggestionDto {
+        tonic: suggestion.tonic.name().to_owned(),
+        scale: suggestion.scale_type.as_str().to_owned(),
+        score: u64::try_from(suggestion.score).unwrap_or_default(),
+        total: u64::try_from(suggestion.total).unwrap_or_default(),
+    }
+}
+
+/// The domain key suggestion of a suggestion DTO.
+///
+/// The grouping only reads the four wire fields, but the domain type carries the
+/// key's diatonic triads as well, so they are filled from the domain's own scale
+/// rather than left empty: the value satisfies the type's invariant.
+///
+/// # Errors
+///
+/// [`ErrorCode::UnknownIdentifier`] for a tonic or scale outside the catalog,
+/// and [`ErrorCode::OutOfRange`] for a count that does not fit this platform.
+pub(crate) fn key_suggestion_from_dto(
+    suggestion: &KeySuggestionDto,
+) -> Result<KeySuggestion, AdapterError> {
+    let tonic = tonic_from_wire(&suggestion.tonic)?;
+    let scale_type = scale_from_wire(&suggestion.scale)?;
+    Ok(KeySuggestion {
+        tonic,
+        scale_type,
+        score: wire_count(suggestion.score, "score")?,
+        total: wire_count(suggestion.total, "total")?,
+        diatonic_chords: fretboard_core::diatonic_chords(tonic, scale_type, ChordMode::Triad),
+    })
+}
+
+/// The key row DTO of a domain key row.
+pub(crate) fn key_row_to_dto(row: &KeyRow) -> KeyRowDto {
+    match row {
+        KeyRow::Single(item) => KeyRowDto::Single {
+            item: key_suggestion_to_dto(item),
+        },
+        KeyRow::Group { prominent, others } => KeyRowDto::Group {
+            prominent: prominent.iter().map(key_suggestion_to_dto).collect(),
+            others: others.iter().map(key_suggestion_to_dto).collect(),
+        },
+    }
+}
+
+/// The multi-key group DTO of a domain multi-key group.
+pub(crate) fn multi_key_group_to_dto(group: &MultiKeyGroup) -> MultiKeyGroupDto {
+    MultiKeyGroupDto {
+        key: group.key.as_ref().map(key_suggestion_to_dto),
+        chords: group.chords.iter().map(chord_to_dto).collect(),
+    }
+}
+
+/// The degree DTO of a domain degree specification.
+fn degree_to_dto(degree: &Degree) -> DegreeDto {
+    DegreeDto {
+        degree: degree.degree,
+        accidental: degree.accidental,
+        quality: degree.quality.map(|quality| quality.as_str().to_owned()),
+    }
+}
+
+/// The progression DTO of a domain catalog progression.
+pub(crate) fn progression_to_dto(entry: &Progression) -> ProgressionDto {
+    ProgressionDto {
+        id: entry.id.as_str().to_owned(),
+        name: entry.name.to_owned(),
+        category: entry.category.to_owned(),
+        genre: entry.genre.to_owned(),
+        description: entry.description.to_owned(),
+        example_key: entry.example_key.to_owned(),
+        scale: entry.scale_type.as_str().to_owned(),
+        degrees: entry.degrees.iter().map(degree_to_dto).collect(),
+        notable_songs: entry
+            .notable_songs
+            .iter()
+            .map(|song| (*song).to_owned())
+            .collect(),
+    }
+}
+
+/// The progression group DTO of a domain catalog group.
+pub(crate) fn progression_group_to_dto(group: &ProgressionGroup) -> ProgressionGroupDto {
+    ProgressionGroupDto {
+        category: group.category.to_owned(),
+        progressions: group
+            .ids
+            .iter()
+            .map(|id| progression_to_dto(fretboard_core::progression(*id)))
+            .collect(),
     }
 }
