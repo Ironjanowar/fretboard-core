@@ -1,4 +1,52 @@
 {
   "schema_version": 1,
-  "approved_deviations": []
+  "approved_deviations": [
+    {
+      "decision": "Contract.D03",
+      "approved": "User decision 2026-09-29 (\"Apruebo a con a1\")",
+      "approved_phase": "P3 (C12, C13)",
+      "subject": "Order of interpretations whose recognition sort keys are equal: the baseline inherits the Elixir map enumeration order, which is not reproducible",
+      "affected_cases": "all tie groups; classified programmatically by the parity tests, never enumerated by hand",
+      "baseline_output": "the tie order of the exporting VM, which changes with the atom table (adding 3 inert atoms changed identify.jsonl)",
+      "native_output": "frozen catalog identifier order (QualityId::ALL) and, within one quality, order of appearance",
+      "reason": "Replaying the accidental order is impossible in general (the induced order has cycles) and would bind the answer to the exporter revision",
+      "counts": {
+        "identify": "15693 records: 5143 identical, 10550 tie-affected, 0 substantive differences",
+        "analyzer": "34 records: 24 identical, 10 tie-affected"
+      }
+    },
+    {
+      "decision": "Contract.D05",
+      "approved": "User decision 2026-09-29 (option A)",
+      "approved_phase": "P5 (C16)",
+      "subject": "Key scoring compares the input's raw root string against sharp candidate names, so a flat-root input scores 0:2 where the sharp spelling scores 2:2",
+      "affected_cases": [
+        "suggest_keys/flat-root-eb-major"
+      ],
+      "baseline_output": "14 suggestions, every score 0:2",
+      "native_output": "the same 14 suggestions in the same order, scores 2:2 (the native root is a normalized pitch class with no spelling)",
+      "reason": "Only the score field differs, membership and order are identical, and no client can reach the case: the URL codec rejects non-sharp roots and after CORE-D06 every wire surface is sharp-only",
+      "counts": {
+        "keys": "17 records: 16 identical, 1 differs in the score field only"
+      }
+    },
+    {
+      "decision": "Contract.D06",
+      "approved": "User decision 2026-09-29 (option B)",
+      "approved_phase": "P5 (C16)",
+      "subject": "Modal grouping drops any group that is not a perfect seven-mode set, so a perfect match can leave the panel empty",
+      "affected_cases": [
+        "key_groups/single-modal-suggestion-incomplete-group",
+        "key_groups/incomplete-modal-pair-only",
+        "key_groups/incomplete-modal-pair-with-non-modal-survivor",
+        "key_groups/incomplete-sibling-group-dropped"
+      ],
+      "baseline_output": "0 rows for the first two (a perfect C major shows nothing), the surviving pentatonic row for the third, and 7 of 9 perfect suggestions for the fourth (G major and E minor vanish)",
+      "native_output": "a perfect suggestion is never dropped: the incomplete modal group is shown as its own row and its members are shown, so nothing that fits perfectly is hidden",
+      "reason": "Showing less than exists is fidelity; showing nothing while a perfect match exists is a defect the user chose not to inherit. The row order itself is deterministic (the note-set key term order) and is ported verbatim, so only the drop deviates",
+      "counts": {
+        "key_groups": "16 records: 12 identical, 4 differ by the drop only"
+      }
+    }
+  ]
 }

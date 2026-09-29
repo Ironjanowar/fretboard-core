@@ -1433,8 +1433,47 @@ fn approved_deviations_ledger_is_well_formed() {
     let approved = value["approved_deviations"]
         .as_array()
         .expect("approved_deviations is a list");
-    assert!(
-        approved.is_empty(),
-        "the approval ledger is currently empty; got {approved:?}"
-    );
+
+    // An empty ledger stays valid: a deviation is listed only once it has been
+    // approved. A non-empty one is cross-checked against the decision log, so a
+    // deviation cannot be recorded while its decision is still an open gate.
+    let decisions = read_repo_file("docs/decisions.md");
+    let entry_keys = name_set(&[
+        "decision",
+        "approved",
+        "approved_phase",
+        "subject",
+        "affected_cases",
+        "baseline_output",
+        "native_output",
+        "reason",
+        "counts",
+    ]);
+    let mut seen = BTreeSet::new();
+    for entry in approved {
+        assert_eq!(
+            object_keys(entry),
+            entry_keys,
+            "every deviation declares exactly the documented fields: {entry:?}"
+        );
+        let decision = entry["decision"]
+            .as_str()
+            .expect("a deviation names its decision");
+        assert!(
+            seen.insert(decision),
+            "{decision} is recorded once, not twice"
+        );
+        let row = decisions
+            .lines()
+            .find(|line| line.starts_with(&format!("| `{decision}` |")))
+            .unwrap_or_else(|| panic!("{decision} has a row in docs/decisions.md"));
+        assert!(
+            row.to_lowercase().contains("decid"),
+            "{decision} is recorded as a decision, not as an open gate: {row}"
+        );
+        for field in ["approved", "approved_phase", "subject", "reason"] {
+            let text = entry[field].as_str().expect("a deviation explains itself");
+            assert!(!text.is_empty(), "{decision} leaves {field} empty");
+        }
+    }
 }
