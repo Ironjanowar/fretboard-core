@@ -21,12 +21,13 @@ use crate::convert::{
     instrument_definitions_to_dto, keyboard_surface_to_dto, page_event_from_dto,
     page_state_from_dto, page_state_to_dto, quality_groups_to_dto,
 };
-use fretboard_core::StringIndex;
+use fretboard_core::{SoundingPitch, StringIndex};
 
-use crate::convert::{instrument_from_dto, tuning_from_dto};
+use crate::convert::{analysis_to_dto, instrument_from_dto, tuning_from_dto};
 use crate::dto::{
-    AdapterError, ChordDetailsDto, ChordDto, FrettedSurfaceDto, InstrumentDefinitionDto,
-    InstrumentDto, KeyboardSurfaceDto, PageEventDto, PageStateDto, QualityGroupDto, TuningDto,
+    AdapterError, AnalysisDto, ChordDetailsDto, ChordDto, FrettedSurfaceDto,
+    InstrumentDefinitionDto, InstrumentDto, KeyboardSurfaceDto, PageEventDto, PageStateDto,
+    QualityGroupDto, TuningDto,
 };
 
 /// The default page: guitar, Standard tuning, no chords, no highlight, the
@@ -235,4 +236,118 @@ pub fn change_tuning_note(
     )
     .map_err(AdapterError::from)?;
     Ok(crate::convert::tuning_to_dto(&edited))
+}
+
+/// The analysis of a page, or nothing when the page is on the visualizer tab.
+///
+/// The analysis is derived from the committed selection — a fretted position
+/// through the committed tuning, a piano key as its absolute pitch — and never
+/// from the stored chords, so the same answer comes back whatever the
+/// visualizer holds. `None` is the contract's *absent* analysis
+/// (`Evaluation.analysis` is optional and absent on visualizer); an empty
+/// selection on the analyzer tab answers
+/// [`AnalysisDto::Empty`](crate::AnalysisDto::Empty) instead.
+///
+/// # Errors
+///
+/// [`AdapterError`] with the state conversion's own failures: `UnknownIdentifier`
+/// for an identifier outside the frozen catalog, `OutOfRange` for a value outside
+/// its range, `InvalidState` for a state the domain rejects.
+#[uniffi::export]
+pub fn analyze_page(state: PageStateDto) -> Result<Option<AnalysisDto>, AdapterError> {
+    let domain = page_state_from_dto(&state)?;
+    Ok(fretboard_core::analyze_page(&domain)
+        .as_ref()
+        .map(analysis_to_dto))
+}
+
+/// The analysis of absolute sounding pitches, independent of instrument.
+///
+/// This is the same analyzer the page reaches through [`analyze_page`]: the
+/// piano's selected keys and a fretted selection reduced to their sounding
+/// pitches analyze identically. A pitch outside `0..=151` is rejected rather
+/// than clamped.
+///
+/// # Errors
+///
+/// [`AdapterError`] with `OutOfRange` for a pitch outside the sounding-pitch
+/// range.
+#[uniffi::export]
+pub fn analyze_pitches(pitches: Vec<u16>) -> Result<AnalysisDto, AdapterError> {
+    let sounding = pitches
+        .into_iter()
+        .map(SoundingPitch::try_from)
+        .collect::<Result<Vec<_>, _>>()
+        .map_err(AdapterError::from)?;
+    Ok(analysis_to_dto(&fretboard_core::analyze_pitches(&sounding)))
+}
+
+/// The tuning draft a page opens, or nothing on the piano.
+///
+/// The draft is UI-only (`02-core-contract.md` section 8) and starts from the
+/// committed tuning; editing it can never touch the page. A fretted page always
+/// answers a draft, the piano never does — its tuning modal is ignored entirely.
+///
+/// # Errors
+///
+/// [`AdapterError`] with the state conversion's own failures.
+#[uniffi::export]
+pub fn open_tuning_draft(state: PageStateDto) -> Result<Option<TuningDto>, AdapterError> {
+    let domain = page_state_from_dto(&state)?;
+    Ok(fretboard_core::open_tuning_draft(&domain)
+        .as_ref()
+        .map(crate::convert::tuning_to_dto))
+}
+
+/// Select a preset for a tuning draft.
+///
+/// The draft changes only when the name is a preset of that instrument; an
+/// unknown name, or one that belongs to another instrument, comes back
+/// unchanged, exactly as the baseline's ignored event does. The committed page
+/// is not involved: this is draft math.
+///
+/// # Errors
+///
+/// [`AdapterError`] with `OutOfRange` for a pitch outside `0..=127`, and
+/// `UnknownIdentifier` for a reference the catalog does not know.
+#[uniffi::export]
+pub fn select_tuning_preset(
+    instrument: InstrumentDto,
+    draft: TuningDto,
+    preset: String,
+) -> Result<TuningDto, AdapterError> {
+    let domain = tuning_from_dto(&draft)?;
+    Ok(crate::convert::tuning_to_dto(
+        &fretboard_core::select_tuning_preset(instrument_from_dto(instrument), &domain, &preset),
+    ))
+}
+
+/// Edit one string of a tuning draft.
+///
+/// The guards are the baseline handler's: the string index is the recorded text
+/// and must be a string of the instrument, and the note must be one of the
+/// twelve sharp names. An invalid value comes back as the unchanged draft, never
+/// as an error and never as a wrong pitch; the edit resolves against the draft's
+/// own reference, so repeated edits cannot drift.
+///
+/// # Errors
+///
+/// [`AdapterError`] with `OutOfRange` for a pitch outside `0..=127`, and
+/// `UnknownIdentifier` for a reference the catalog does not know.
+#[uniffi::export]
+pub fn change_tuning_string(
+    instrument: InstrumentDto,
+    draft: TuningDto,
+    string: String,
+    note: String,
+) -> Result<TuningDto, AdapterError> {
+    let domain = tuning_from_dto(&draft)?;
+    Ok(crate::convert::tuning_to_dto(
+        &fretboard_core::change_tuning_string(
+            instrument_from_dto(instrument),
+            &domain,
+            &string,
+            &note,
+        ),
+    ))
 }

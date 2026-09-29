@@ -13,16 +13,16 @@
 //! so the value a client gets is exactly the domain's canonical value.
 
 use fretboard_core::{
-    ChordDetails, ChordSpec, CoreError, Fret, InstrumentId, InstrumentKind, InstrumentState,
-    NoteFill, OpenPitch, PageEvent, PageState, PitchClass, Position, PresetName, QualityId,
-    StringIndex, SurfaceCell, Tab, TuningState,
+    Analysis, ChordDetails, ChordSpec, CoreError, Fret, InstrumentId, InstrumentKind,
+    InstrumentState, Interpretation, NoteFill, OpenPitch, PageEvent, PageState, PitchClass,
+    Position, PresetName, QualityId, StringIndex, SurfaceCell, Tab, TuningState,
 };
 
 use crate::dto::{
-    AdapterError, ChordDetailsDto, ChordDto, ErrorCode, FrettedSurfaceDto, InstrumentDefinitionDto,
-    InstrumentDto, InstrumentKindDto, InstrumentStateDto, KeyboardKeyDto, KeyboardSurfaceDto,
-    NoteFillDto, PageEventDto, PageStateDto, PositionDto, QualityDto, QualityGroupDto,
-    SurfaceCellDto, SurfaceRowDto, TabDto, TuningDto,
+    AdapterError, AnalysisDto, ChordDetailsDto, ChordDto, ErrorCode, FrettedSurfaceDto,
+    InstrumentDefinitionDto, InstrumentDto, InstrumentKindDto, InstrumentStateDto,
+    InterpretationDto, KeyboardKeyDto, KeyboardSurfaceDto, NoteFillDto, PageEventDto, PageStateDto,
+    PositionDto, QualityDto, QualityGroupDto, SurfaceCellDto, SurfaceRowDto, TabDto, TuningDto,
 };
 
 impl From<CoreError> for AdapterError {
@@ -300,6 +300,17 @@ pub(crate) fn page_event_from_dto(event: &PageEventDto) -> Result<PageEvent, Ada
         PageEventDto::HighlightChord { index } => Ok(PageEvent::HighlightChord {
             index: occurrence_index(*index)?,
         }),
+        PageEventDto::ToggleNote { position } => {
+            Ok(PageEvent::ToggleNote(position_from_dto(*position)?))
+        }
+        PageEventDto::ClearSelection => Ok(PageEvent::ClearSelection),
+        PageEventDto::SetTab { tab } => Ok(PageEvent::SetTab(tab_from_dto(*tab))),
+        PageEventDto::SetInstrument { instrument } => {
+            Ok(PageEvent::SetInstrument(instrument_from_dto(*instrument)))
+        }
+        PageEventDto::CommitTuning { tuning } => {
+            Ok(PageEvent::CommitTuning(tuning_from_dto(tuning)?))
+        }
     }
 }
 
@@ -403,4 +414,63 @@ pub(crate) fn tuning_notes_to_dto(tuning: &TuningState) -> Vec<String> {
         .iter()
         .map(|note| note.name().to_owned())
         .collect()
+}
+
+/// The adapter's projection of one analyzer answer.
+///
+/// The adapter spells the domain's values out and adds nothing: the notes are
+/// the domain's own names, the identification list keeps the baseline's order,
+/// and the interval labels are the catalog's strings.
+#[must_use]
+pub(crate) fn analysis_to_dto(analysis: &Analysis) -> AnalysisDto {
+    match analysis {
+        Analysis::Empty => AnalysisDto::Empty,
+        Analysis::Single { note } => AnalysisDto::Single {
+            note: note.name().to_owned(),
+        },
+        Analysis::Interval { low, high, label } => AnalysisDto::Interval {
+            low: low.name().to_owned(),
+            high: high.name().to_owned(),
+            label: (*label).to_owned(),
+        },
+        Analysis::Chords {
+            notes,
+            bass,
+            interpretations,
+        } => AnalysisDto::Chords {
+            notes: notes.iter().map(|note| note.name().to_owned()).collect(),
+            bass: bass.name().to_owned(),
+            interpretations: interpretations.iter().map(interpretation_to_dto).collect(),
+        },
+    }
+}
+
+/// The adapter's projection of one identification.
+fn interpretation_to_dto(entry: &Interpretation) -> InterpretationDto {
+    InterpretationDto {
+        root: entry.root.name().to_owned(),
+        quality: entry.quality.as_str().to_owned(),
+        exact: entry.exact,
+        incomplete: entry.incomplete,
+        notes: entry
+            .notes
+            .iter()
+            .map(|note| note.name().to_owned())
+            .collect(),
+        intervals: entry
+            .intervals
+            .iter()
+            .map(|label| (*label).to_owned())
+            .collect(),
+        missing_intervals: entry
+            .missing_intervals
+            .iter()
+            .map(|label| (*label).to_owned())
+            .collect(),
+        bass: entry
+            .bass
+            .map_or_else(String::new, |bass| bass.name().to_owned()),
+        inversion: entry.inversion,
+        slash_label: entry.slash_label.clone().unwrap_or_default(),
+    }
 }
