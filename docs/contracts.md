@@ -22,7 +22,7 @@ implements them, and this file names the versioned boundary.
 |---|---|---|---|
 | Oracle fixture schema | `1` | task `C01` (`fixtures/oracle/manifest.json`, `fixture_schema_version`) | open until fixtures exist |
 | Snapshot schema (`{"schema_version": 1, "page": …}`) | `1` | task `C02`/`C20` (`fixtures/contract/snapshot-v1.json`) | open |
-| Adapter API (revision 1: `fixtures/contract/api-v1.json`; revision 2: `api-v2.json`; revision 3: `api-v3.json`; revision 4: `api-v4.json`; revision 5: `api-v5.json`; revision 6: `api-v6.json`) | `6` | revision 1 frozen by `C02`/`C04`; revision 2 (`CORE-D08`) adds the P2 endpoints and the first declared capability set; revision 6 adds the URL import and the snapshot envelope, so `snapshot` is supported | open |
+| Adapter API (revision 1: `fixtures/contract/api-v1.json`; revision 2: `api-v2.json`; revision 3: `api-v3.json`; revision 4: `api-v4.json`; revision 5: `api-v5.json`; revision 6: `api-v6.json`; revision 7: `api-v7.json`) | `7` | revision 1 frozen by `C02`/`C04`; revision 2 (`CORE-D08`) adds the P2 endpoints and the first declared capability set; revision 6 adds the URL import and the snapshot envelope; revision 7 adds the tolerant legacy URL import, so `page_params` is supported | open |
 | Generated binding package | `dev.ironjanowar.fretboard.core` | task `C04` (`crates/mobile-ffi/uniffi.toml`) | open |
 | Engine artifact | `fretboard-engine-<version>.aar` + SHA-256 | task `C05` | open |
 

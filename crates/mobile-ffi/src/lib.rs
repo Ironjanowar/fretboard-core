@@ -60,10 +60,10 @@ uniffi::setup_scaffolding!();
 pub use api::{
     analyze_page, analyze_pitches, apply_page_event, change_tuning_note, change_tuning_string,
     chord_color_slots, chord_details, decode_snapshot, default_state, detect_tuning_preset,
-    diatonic_chords, encode_snapshot, fretted_surface, group_key_suggestions, import_url,
-    instruments, key_suggestions, keyboard_surface, multi_key_suggestions, open_tuning_draft,
-    presets, progression_chords, progressions, quality_groups, select_tuning_preset,
-    snapshot_schema_version, tuning_notes, validate_state,
+    diatonic_chords, encode_snapshot, fretted_surface, group_key_suggestions, import_legacy_url,
+    import_url, instruments, key_suggestions, keyboard_surface, multi_key_suggestions,
+    open_tuning_draft, presets, progression_chords, progressions, quality_groups,
+    select_tuning_preset, snapshot_schema_version, tuning_notes, validate_state,
 };
 pub use dto::{
     AdapterError, AnalysisDto, ChordDetailsDto, ChordDto, ChordModeDto, DegreeDto, ErrorCode,

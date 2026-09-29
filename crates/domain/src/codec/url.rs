@@ -147,6 +147,61 @@ pub fn import_request_target(target: &str) -> Result<ImportedPage, CoreError> {
     ))))
 }
 
+/// Import one absolute URL of **any** origin, with the legacy reader's tolerance.
+///
+/// This is the paste and `ACTION_SEND` path. The plan separates it from
+/// [`import_absolute_url`] on purpose: a link pasted from the old web application is
+/// read whatever host or scheme it names, because the origin that would have to be
+/// allowed *is not known yet* (`DEC-07`) and because nothing here emits a link —
+/// `share_url` is still unimplemented (`D08`). Only two things are checked: the input
+/// is an absolute URL, and it names the page route.
+///
+/// The query keeps the legacy codec's tolerance: unknown fields are ignored, a
+/// malformed field is defaulted rather than failing the whole import, and valid
+/// siblings survive (`page_params.rs`).
+///
+/// # Errors
+///
+/// [`CoreError::InvalidUrl`] when the input carries no `scheme://`, or when its
+/// query cannot be decoded (a percent escape that is not valid UTF-8).
+pub fn import_legacy_url(url: &str) -> Result<ImportedPage, CoreError> {
+    let Some((_scheme, _authority, path, query)) = split_absolute_url(url) else {
+        return Err(CoreError::invalid_url(TARGET_FIELD));
+    };
+    if path != PAGE_ROUTE {
+        return Ok(ImportedPage::NotFound);
+    }
+    let params = decode_query(&query)?;
+    Ok(ImportedPage::Route(decode_page_params(&json_params(
+        &params,
+    ))))
+}
+
+/// The scheme, authority, path and query of one absolute URL.
+///
+/// Shared by the strict origin-checked reader and the tolerant legacy one, so both
+/// agree on what a URL's parts *are* while only one of them compares them.
+fn split_absolute_url(url: &str) -> Option<(String, String, String, String)> {
+    let (scheme, rest) = url.split_once("://")?;
+    // The fragment is dropped first, exactly as the pinned capture shows: an
+    // unencoded `#` cuts whatever follows it.
+    let without_fragment = rest.split('#').next().unwrap_or_default();
+    let (authority_and_path, query) = match without_fragment.split_once('?') {
+        Some((head, query)) => (head, query),
+        None => (without_fragment, ""),
+    };
+    let (authority, path) = match authority_and_path.split_once('/') {
+        Some((authority, path)) => (authority, format!("/{path}")),
+        None => (authority_and_path, PAGE_ROUTE.to_owned()),
+    };
+    Some((
+        scheme.to_owned(),
+        authority.to_owned(),
+        path,
+        query.to_owned(),
+    ))
+}
+
 /// Import one absolute URL against the supplied policy.
 ///
 /// The URL must be the policy's scheme, its exact authority and its exact path;
