@@ -27,6 +27,8 @@
 //! [`ChordDetails`] exposes the two orders separately, and a consumer that zips
 //! them reproduces the baseline's raw pairs exactly.
 
+use std::str::FromStr;
+
 use crate::error::CoreError;
 use crate::interval::interval_name;
 use crate::note::note_at;
@@ -676,6 +678,29 @@ impl ChordMode {
             Self::Triad => "triad",
             Self::Seventh => "seventh",
         }
+    }
+
+    /// Parse one of the two wire spellings the key modal offers.
+    ///
+    /// # Errors
+    ///
+    /// [`CoreError::UnknownIdentifier`] naming `chord_mode` when the value is not
+    /// one of `triad` and `seventh`; a client that invents a third mode must not
+    /// be read as a mode the baseline does not have.
+    pub fn parse(value: &str) -> Result<Self, CoreError> {
+        match value {
+            "triad" => Ok(Self::Triad),
+            "seventh" => Ok(Self::Seventh),
+            _ => Err(CoreError::unknown_identifier("chord_mode")),
+        }
+    }
+}
+
+impl FromStr for ChordMode {
+    type Err = CoreError;
+
+    fn from_str(value: &str) -> Result<Self, Self::Err> {
+        Self::parse(value)
     }
 }
 

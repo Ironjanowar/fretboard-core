@@ -122,8 +122,9 @@ pub use progression_catalog::{
     progression_by_str, progression_categories,
 };
 pub use reducer::{
-    DraftEvent, PageEvent, apply_event, change_tuning_string, draft_event, open_tuning_draft,
-    page_event, select_tuning_preset,
+    DraftEvent, EvaluationDraftEvent, KeysDraft, PageEvent, ProgressionDraft, apply_event,
+    change_tuning_string, draft_event, evaluation_draft_event, open_tuning_draft, page_event,
+    select_tuning_preset,
 };
 pub use scale::{DiatonicChord, diatonic_chords, scale_notes};
 pub use scale_catalog::{ScaleGroup, grouped_scale_types, scale_formula, scale_label};
