@@ -88,7 +88,8 @@ pub use instrument_catalog::{
     Instrument, InstrumentKind, PitchPreset, fretted_instruments, guitar_standard_tuning,
     guitar_tuning_preset_names, guitar_tuning_presets, instrument_frets, instrument_kind,
     instrument_label, instrument_strings, instruments, keyboard_pitch_range, named_preset_pitches,
-    piano, pitch_presets, preset_pitches, standard_pitches, standard_tuning_notes, tuning_presets,
+    piano, pitch_presets, preset_names, preset_pitches, standard_pitches, standard_tuning_notes,
+    tuning_presets,
 };
 pub use interval::interval_name;
 pub use note::{chromatic_scale, note_at, note_index};

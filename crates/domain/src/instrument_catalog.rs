@@ -329,6 +329,15 @@ pub fn pitch_presets(id: InstrumentId) -> &'static [PitchPreset] {
     instrument_of(id).presets
 }
 
+/// The preset names of an instrument, in catalog order.
+///
+/// Empty for the piano, which has no tuning. This is the enumeration a client's
+/// preset picker reads instead of carrying a hand-written list of its own: the
+/// names are the frozen catalog's, in the frozen order.
+pub fn preset_names(id: InstrumentId) -> Vec<PresetName> {
+    pitch_presets(id).iter().map(|preset| preset.name).collect()
+}
+
 /// The exact pitches of one named preset, or `None` when the instrument has no
 /// such preset.
 pub fn preset_pitches(id: InstrumentId, name: PresetName) -> Option<&'static [OpenPitch]> {
