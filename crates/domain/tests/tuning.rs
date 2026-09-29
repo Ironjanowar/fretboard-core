@@ -525,6 +525,55 @@ fn standard_versus_low_g() {
     );
 }
 
+/// The anchor is the string's pitch **in the reference preset**, never the
+/// string's current pitch.
+///
+/// The fixture cannot tell the two apart: every record it edits starts from the
+/// preset's own pitch for that string. So this test builds the one state that
+/// does — the frozen Standard state with one string moved to another preset's
+/// pitch, its reference still Standard — and pins the plan's rule
+/// (`02-core-contract.md`: the nearest pitch to that string's pitch in the
+/// reference preset, a six-semitone tie resolving downward, so the answer is
+/// never further than six semitones from that preset's pitch).
+#[test]
+fn an_edit_resolves_against_the_reference_preset_not_the_current_pitch() {
+    let instrument = InstrumentId::Ukelele;
+    let standard_case = fixture_case("preset_tuning/ukelele/Standard");
+    let standard = tuning_state_of(&standard_case["output"]["tuning_state"]);
+    let low_g_case = fixture_case("preset_tuning/ukelele/Low G");
+    let low_g = tuning_state_of(&low_g_case["output"]["tuning_state"]);
+
+    let mut drifted = standard.clone();
+    drifted.pitches[0] = low_g.pitches[0];
+    assert_eq!(
+        drifted.reference,
+        standard.reference,
+        "{}: the reference stays Standard",
+        case_id(&standard_case)
+    );
+    assert_ne!(
+        drifted.pitches[0], standard.pitches[0],
+        "the state's first string has moved away from its preset"
+    );
+
+    let string = StringIndex::try_from(0).expect("any u8 is a string index");
+    let edited = change_tuning_note(instrument, &drifted, string, "A")
+        .unwrap_or_else(|error| panic!("the edit must apply: {error:?}"));
+
+    let chosen = i16::from(u8::from(edited.pitches[0]));
+    let anchor = i16::from(u8::from(standard.pitches[0]));
+    let current = i16::from(u8::from(drifted.pitches[0]));
+    assert_eq!(u8::from(edited.pitches[0]) % 12, 9, "the answer is an A");
+    assert!(
+        (chosen - anchor).abs() <= 6,
+        "the answer {chosen} is within six semitones of the reference preset's {anchor}"
+    );
+    assert!(
+        (chosen - current).abs() > 6,
+        "the answer {chosen} is not the nearest A to the current pitch {current}"
+    );
+}
+
 /// Baritone is a real ukulele anchor: its committed state, its detection and
 /// both of its sequence edits come from the fixture.
 #[test]
