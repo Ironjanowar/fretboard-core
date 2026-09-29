@@ -17,17 +17,19 @@
 #![allow(clippy::needless_pass_by_value)]
 
 use crate::convert::{
-    chord_details_to_dto, chord_from_dto, chord_slots_to_dto, fretted_surface_to_dto,
-    instrument_definitions_to_dto, keyboard_surface_to_dto, page_event_from_dto,
-    page_state_from_dto, page_state_to_dto, quality_groups_to_dto,
+    chord_details_to_dto, chord_from_dto, chord_mode_from_dto, chord_slots_to_dto, chord_to_dto,
+    diatonic_chord_to_dto, fretted_surface_to_dto, instrument_definitions_to_dto, key_row_to_dto,
+    key_suggestion_from_dto, keyboard_surface_to_dto, multi_key_group_to_dto, page_event_from_dto,
+    page_state_from_dto, page_state_to_dto, progression_from_wire, progression_group_to_dto,
+    quality_groups_to_dto, scale_from_wire, tonic_from_wire,
 };
 use fretboard_core::{SoundingPitch, StringIndex};
 
 use crate::convert::{analysis_to_dto, instrument_from_dto, tuning_from_dto};
 use crate::dto::{
-    AdapterError, AnalysisDto, ChordDetailsDto, ChordDto, FrettedSurfaceDto,
-    InstrumentDefinitionDto, InstrumentDto, KeyboardSurfaceDto, PageEventDto, PageStateDto,
-    QualityGroupDto, TuningDto,
+    AdapterError, AnalysisDto, ChordDetailsDto, ChordDto, ChordModeDto, FrettedSurfaceDto,
+    InstrumentDefinitionDto, InstrumentDto, KeyRowDto, KeySuggestionDto, KeyboardSurfaceDto,
+    MultiKeyGroupDto, PageEventDto, PageStateDto, ProgressionGroupDto, QualityGroupDto, TuningDto,
 };
 
 /// The default page: guitar, Standard tuning, no chords, no highlight, the
@@ -368,4 +370,148 @@ pub fn change_tuning_string(
             &note,
         ),
     ))
+}
+
+/// The key rows of a page: the suggestions for the active chords, grouped the
+/// way the panel shows them.
+///
+/// The whole decision is the domain's and crosses whole: the page's two-chord
+/// gate (`KEY_PAGE_MIN_CHORDS`) answers nothing below two active chords, the
+/// remaining suggestions are ordered by score and the collapsed groups are built
+/// by the same grouping the pinned panel uses. Kotlin renders the rows it gets
+/// and never re-scores, re-groups or re-sorts them.
+///
+/// # Errors
+///
+/// [`AdapterError`] with the state conversion's own failures: `UnknownIdentifier`
+/// for a chord root outside the twelve sharp wire names, `OutOfRange` for a value
+/// outside its range, `InvalidState` for a state the domain rejects.
+#[uniffi::export]
+pub fn key_suggestions(state: PageStateDto) -> Result<Vec<KeyRowDto>, AdapterError> {
+    let domain = page_state_from_dto(&state)?;
+    Ok(
+        fretboard_core::group_key_suggestions(&fretboard_core::page_key_suggestions(
+            &domain.chords,
+        ))
+        .iter()
+        .map(key_row_to_dto)
+        .collect(),
+    )
+}
+
+/// The key rows of a suggestion list a client already holds.
+///
+/// This is the pure grouping of [`key_suggestions`] without the page's own gate
+/// and scoring: the input is a suggestion list (the answer of an earlier
+/// [`key_suggestions`] call, or a cached one) and the output is the rows the
+/// panel renders. A client that keeps a suggestion list therefore never
+/// re-implements the grouping to redraw it.
+///
+/// # Errors
+///
+/// [`AdapterError`] with `UnknownIdentifier` for a tonic or scale outside the
+/// catalog, and `OutOfRange` for a count that does not fit this platform.
+#[uniffi::export]
+pub fn group_key_suggestions(
+    suggestions: Vec<KeySuggestionDto>,
+) -> Result<Vec<KeyRowDto>, AdapterError> {
+    let domain = suggestions
+        .iter()
+        .map(key_suggestion_from_dto)
+        .collect::<Result<Vec<_>, _>>()?;
+    Ok(fretboard_core::group_key_suggestions(&domain)
+        .iter()
+        .map(key_row_to_dto)
+        .collect())
+}
+
+/// The multi-key groups of a page, each with its full displayed chord
+/// membership.
+///
+/// The domain's multi-key page gate decides whether the panel exists at all: the
+/// raw operation answers nothing below three active chords, and the page shows it
+/// only when the single-key operation answered nothing, so a page whose chords
+/// share any key answers no groups. A group's `chords` is the key's full
+/// membership — every input occurrence whose notes fit — so one chord can appear
+/// in two groups, exactly as the pinned panel shows it.
+///
+/// # Errors
+///
+/// [`AdapterError`] with the state conversion's own failures, exactly as
+/// [`key_suggestions`] reports them.
+#[uniffi::export]
+pub fn multi_key_suggestions(state: PageStateDto) -> Result<Vec<MultiKeyGroupDto>, AdapterError> {
+    let domain = page_state_from_dto(&state)?;
+    let single_keys = fretboard_core::page_key_suggestions(&domain.chords);
+    Ok(
+        fretboard_core::page_multi_key_suggestions(&single_keys, &domain.chords)
+            .iter()
+            .map(multi_key_group_to_dto)
+            .collect(),
+    )
+}
+
+/// The progression catalog, grouped as the picker shows it, in the frozen order.
+///
+/// Every definition crosses whole — identifier, name, category, genre,
+/// description, example key, scale, degrees and notable songs — so the picker
+/// and the modal read the catalog from the engine instead of carrying a copy.
+#[uniffi::export]
+#[must_use]
+pub fn progressions() -> Vec<ProgressionGroupDto> {
+    fretboard_core::grouped_progressions()
+        .iter()
+        .map(progression_group_to_dto)
+        .collect()
+}
+
+/// The chords of one progression in one tonic, in playing order.
+///
+/// The list has one entry per degree, and a progression that repeats a chord
+/// repeats it here too: the apply replaces the page's chords with this list
+/// rather than merging into it. This is both the modal preview and the exact
+/// list [`apply_page_event`] commits for
+/// [`PageEventDto::CommitProgression`](crate::PageEventDto::CommitProgression).
+///
+/// # Errors
+///
+/// [`AdapterError`] with `UnknownIdentifier` for either argument: a tonic that
+/// is not a note name, or a progression identifier the catalog does not carry.
+#[uniffi::export]
+pub fn progression_chords(
+    tonic: String,
+    progression: String,
+) -> Result<Vec<ChordDto>, AdapterError> {
+    let tonic = tonic_from_wire(&tonic)?;
+    let progression = progression_from_wire(&progression)?;
+    Ok(fretboard_core::progression_chords(tonic, progression)
+        .iter()
+        .map(chord_to_dto)
+        .collect())
+}
+
+/// The diatonic chords of one key in the chosen mode, in scale order.
+///
+/// This is the key modal's preview: the same chords the key apply commits for
+/// [`PageEventDto::CommitKeys`](crate::PageEventDto::CommitKeys) in the same
+/// mode. The mode is the modal's own — triads or seventh chords.
+///
+/// # Errors
+///
+/// [`AdapterError`] with `UnknownIdentifier` for either a tonic that is not a
+/// note name or a scale identifier the catalog does not carry.
+#[uniffi::export]
+pub fn diatonic_chords(
+    tonic: String,
+    scale: String,
+    mode: ChordModeDto,
+) -> Result<Vec<ChordDto>, AdapterError> {
+    let tonic = tonic_from_wire(&tonic)?;
+    let scale = scale_from_wire(&scale)?;
+    Ok(
+        fretboard_core::diatonic_chords(tonic, scale, chord_mode_from_dto(mode))
+            .iter()
+            .map(diatonic_chord_to_dto)
+            .collect(),
+    )
 }
