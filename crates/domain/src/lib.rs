@@ -74,7 +74,8 @@ pub use state::{
     validate_state,
 };
 pub use surface::{
-    KeyboardKey, NoteFill, SurfaceCell, fretted_rows, identity_slots, keyboard_keys, note_fill,
+    KeyboardKey, NoteFill, SurfaceCell, fretted_rows, fretted_surface, identity_slots,
+    keyboard_keys, keyboard_surface, note_fill, note_fill_of, slot_of,
 };
 pub use types::{
     Fret, InstrumentId, OpenPitch, PitchClass, PresetName, QualityId, ScaleId, SoundingPitch,

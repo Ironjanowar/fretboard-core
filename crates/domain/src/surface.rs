@@ -34,7 +34,7 @@ use crate::chord::chord_details;
 use crate::error::CoreError;
 use crate::instrument_catalog::{instrument_frets, instrument_strings, keyboard_pitch_range};
 use crate::note::note_at;
-use crate::state::ChordSpec;
+use crate::state::{ChordSpec, InstrumentState, PageState};
 use crate::types::{Fret, InstrumentId, OpenPitch, PitchClass};
 
 /// One position of a fretted surface: its fret, the note it carries and the
@@ -136,6 +136,47 @@ pub fn keyboard_keys(chords: &[ChordSpec]) -> Vec<KeyboardKey> {
         .collect()
 }
 
+/// The fretted surface of a page state: one row per string of its tuning.
+///
+/// The state owns the instrument, its tuning and its chords, so this is the
+/// surface the visualizer tab draws. The note of every string comes from that
+/// string's own pitch, not from a preset name: a tuning edited string by string
+/// is still drawn correctly.
+///
+/// # Errors
+///
+/// Whatever [`fretted_rows`] reports, and [`CoreError::InvalidState`] when the
+/// page is the piano, which has no fretted surface.
+pub fn fretted_surface(state: &PageState) -> Result<Vec<Vec<SurfaceCell>>, CoreError> {
+    let InstrumentState::Fretted {
+        instrument, tuning, ..
+    } = &state.instrument
+    else {
+        return Err(CoreError::invalid_state("instrument"));
+    };
+
+    let notes = tuning
+        .pitches
+        .iter()
+        .copied()
+        .map(note_of)
+        .collect::<Option<Vec<PitchClass>>>()
+        .ok_or_else(|| CoreError::out_of_range("open_pitch"))?;
+
+    fretted_rows(*instrument, &notes, &state.chords)
+}
+
+/// The keyboard surface of a page state: one key per pitch of the instrument's
+/// range, claiming the page's chords.
+///
+/// The piano has a surface and no tuning, so this answers for the piano page; the
+/// chords of a fretted page still claim keys, because those notes exist on a
+/// keyboard as well.
+#[must_use]
+pub fn keyboard_surface(state: &PageState) -> Vec<KeyboardKey> {
+    keyboard_keys(&state.chords)
+}
+
 /// The colour slot of every occurrence of the active list: the index of the first
 /// occurrence of the same identity.
 ///
@@ -146,13 +187,30 @@ pub fn identity_slots(chords: &[ChordSpec]) -> Vec<usize> {
     chords
         .iter()
         .enumerate()
-        .map(|(index, spec)| {
-            chords
-                .iter()
-                .position(|candidate| candidate == spec)
-                .unwrap_or(index)
-        })
+        .map(|(index, spec)| slot_of(chords, spec).unwrap_or(index))
         .collect()
+}
+
+/// The colour slot of one identity: the index of its first occurrence.
+///
+/// This is the one rule behind a repeated chord being drawn in one colour, and it
+/// is the domain's answer so that a consumer never re-derives it.
+#[must_use]
+pub fn slot_of(chords: &[ChordSpec], spec: &ChordSpec) -> Option<usize> {
+    chords.iter().position(|candidate| candidate == spec)
+}
+
+/// The fill of a note of one page: the slot of its single claim, the highlighted
+/// chord's slot when that chord claims it, and the overlap otherwise.
+///
+/// The highlight is the page's own, so the caller passes only the note's
+/// memberships.
+#[must_use]
+pub fn note_fill_of(state: &PageState, memberships: &[ChordSpec]) -> NoteFill {
+    let highlighted = state
+        .highlight
+        .and_then(|highlight| slot_of(&state.chords, &highlight));
+    note_fill(&state.chords, memberships, highlighted)
 }
 
 /// The fill of one note: the slot of the chord it belongs to, or the overlap.
@@ -189,10 +247,7 @@ pub fn note_fill(
     }
 
     match distinct.as_slice() {
-        [only] => chords
-            .iter()
-            .position(|candidate| candidate == only)
-            .map_or(NoteFill::Overlap, NoteFill::Slot),
+        [only] => slot_of(chords, only).map_or(NoteFill::Overlap, NoteFill::Slot),
         _ => NoteFill::Overlap,
     }
 }

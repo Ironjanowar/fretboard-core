@@ -17,9 +17,14 @@
 #![allow(clippy::needless_pass_by_value)]
 
 use crate::convert::{
-    chord_details_to_dto, chord_from_dto, page_state_from_dto, page_state_to_dto,
+    chord_details_to_dto, chord_from_dto, chord_slots_to_dto, fretted_surface_to_dto,
+    instrument_definitions_to_dto, keyboard_surface_to_dto, page_event_from_dto,
+    page_state_from_dto, page_state_to_dto, quality_groups_to_dto,
 };
-use crate::dto::{AdapterError, ChordDetailsDto, ChordDto, PageStateDto};
+use crate::dto::{
+    AdapterError, ChordDetailsDto, ChordDto, FrettedSurfaceDto, InstrumentDefinitionDto,
+    KeyboardSurfaceDto, PageEventDto, PageStateDto, QualityGroupDto,
+};
 
 /// The default page: guitar, Standard tuning, no chords, no highlight, the
 /// visualizer tab.
@@ -68,4 +73,87 @@ pub fn chord_details(chord: ChordDto) -> Result<ChordDetailsDto, AdapterError> {
     let spec = chord_from_dto(&chord)?;
     let details = fretboard_core::chord_details(&spec).map_err(AdapterError::from)?;
     Ok(chord_details_to_dto(&details))
+}
+
+/// The catalog instruments, in catalog order.
+///
+/// The picker shows exactly these five, with the labels, string counts, fret
+/// counts and standard pitches the frozen catalog carries; no client curates its
+/// own list.
+#[uniffi::export]
+#[must_use]
+pub fn instruments() -> Vec<InstrumentDefinitionDto> {
+    instrument_definitions_to_dto()
+}
+
+/// The chord qualities, grouped as the page's picker shows them, in catalog
+/// order.
+#[uniffi::export]
+#[must_use]
+pub fn quality_groups() -> Vec<QualityGroupDto> {
+    quality_groups_to_dto()
+}
+
+/// Apply one page event and return the page it produces.
+///
+/// A tap acts on the state the client already holds: the event is converted, the
+/// domain applies it, and the result is projected back. An event that changes
+/// nothing returns the page it was given, unchanged in meaning, so a client can
+/// compare the two and count its own patches.
+///
+/// # Errors
+///
+/// [`AdapterError`] with the domain's stable code and the same mapping
+/// [`validate_state`] uses: `UnknownIdentifier` for an identifier outside the
+/// frozen catalog, `OutOfRange` for an occurrence index this platform cannot
+/// hold, `InvalidState` for a state the domain rejects.
+#[uniffi::export]
+pub fn apply_page_event(
+    state: PageStateDto,
+    event: PageEventDto,
+) -> Result<PageStateDto, AdapterError> {
+    let domain = page_state_from_dto(&state)?;
+    let next = fretboard_core::apply_event(&domain, &page_event_from_dto(&event)?);
+    Ok(page_state_to_dto(&next))
+}
+
+/// The fretted surface of a page: one row per string, one cell per fret, each
+/// carrying its note, the colour slot of every chord that claims it, and its
+/// fill.
+///
+/// # Errors
+///
+/// [`AdapterError`] with `InvalidState` when the page is the piano, which has no
+/// fretted surface, and the state conversion's own failures.
+#[uniffi::export]
+pub fn fretted_surface(state: PageStateDto) -> Result<FrettedSurfaceDto, AdapterError> {
+    let domain = page_state_from_dto(&state)?;
+    fretted_surface_to_dto(&domain)
+}
+
+/// The keyboard surface of a page: one key per pitch of the instrument's range,
+/// with the same memberships and fill a fretted cell carries.
+///
+/// # Errors
+///
+/// [`AdapterError`] with the state conversion's own failures: `UnknownIdentifier`
+/// for an identifier outside the frozen catalog, `OutOfRange` for a value outside
+/// its range, `InvalidState` for a state the domain rejects.
+#[uniffi::export]
+pub fn keyboard_surface(state: PageStateDto) -> Result<KeyboardSurfaceDto, AdapterError> {
+    let domain = page_state_from_dto(&state)?;
+    Ok(keyboard_surface_to_dto(&domain))
+}
+
+/// The colour slot of every active chord occurrence: a repeated identity shares
+/// the slot of its first occurrence.
+///
+/// # Errors
+///
+/// [`AdapterError`] with the state conversion's own failures, exactly as
+/// [`validate_state`] reports them.
+#[uniffi::export]
+pub fn chord_color_slots(state: PageStateDto) -> Result<Vec<u64>, AdapterError> {
+    let domain = page_state_from_dto(&state)?;
+    Ok(chord_slots_to_dto(&domain))
 }

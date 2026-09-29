@@ -429,3 +429,137 @@ pub struct ChordDetailsDto {
     /// The contextual role of each member, in the same order as `notes`.
     pub interval_labels: Vec<String>,
 }
+
+/// The kind of a catalog instrument: a fretted one or the keyboard.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, uniffi::Enum)]
+pub enum InstrumentKindDto {
+    /// A fretted instrument: strings, frets and a tuning.
+    Fretted,
+    /// The keyboard: absolute pitches and no tuning.
+    Keyboard,
+}
+
+/// One catalog instrument definition crossing the boundary: what the picker
+/// lists and what a surface may assume.
+#[derive(Debug, Clone, PartialEq, Eq, uniffi::Record)]
+pub struct InstrumentDefinitionDto {
+    /// The instrument, as the stable catalog identifier.
+    pub instrument: InstrumentDto,
+    /// The display name of the instrument.
+    pub name: String,
+    /// The kind of instrument.
+    pub kind: InstrumentKindDto,
+    /// The number of physical strings, and zero for the keyboard.
+    pub strings: u8,
+    /// The number of frets, and absent for the keyboard.
+    pub frets: Option<u8>,
+    /// The pitches of the instrument's standard tuning, in physical string order,
+    /// and empty for the keyboard.
+    pub standard_pitches: Vec<u8>,
+}
+
+/// One chord quality of the frozen catalog: its stable identifier and the label
+/// the page shows for it.
+#[derive(Debug, Clone, PartialEq, Eq, uniffi::Record)]
+pub struct QualityDto {
+    /// The quality identifier, e.g. `major`.
+    pub quality: String,
+    /// The display/wire label of the quality, e.g. `maj`.
+    pub label: String,
+}
+
+/// One group of chord qualities, in catalog display order.
+///
+/// The groups are the page's own; no client curates a subset of them.
+#[derive(Debug, Clone, PartialEq, Eq, uniffi::Record)]
+pub struct QualityGroupDto {
+    /// The group's display name.
+    pub group: String,
+    /// The group's qualities, in display order.
+    pub qualities: Vec<QualityDto>,
+}
+
+/// One page event crossing the boundary.
+#[derive(Debug, Clone, PartialEq, Eq, uniffi::Enum)]
+pub enum PageEventDto {
+    /// Add one occurrence of a chord, unless that identity is already present.
+    AddChord {
+        /// The chord to add.
+        chord: ChordDto,
+    },
+    /// Remove the occurrence at this index.
+    RemoveChord {
+        /// The index of the occurrence to remove.
+        index: u64,
+    },
+    /// Remove every chord and clear the highlight, keeping everything else.
+    ClearAllChords,
+    /// Highlight the occurrence at this index, or clear the highlight when that
+    /// occurrence already carries it.
+    HighlightChord {
+        /// The index of the occurrence the tap landed on.
+        index: u64,
+    },
+}
+
+/// What fills one note of a surface.
+///
+/// The slot is an index into the active chord list; the client owns the palette.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, uniffi::Enum)]
+pub enum NoteFillDto {
+    /// The note is filled with the colour of this slot.
+    Slot {
+        /// The active-list index whose colour fills the note.
+        slot: u64,
+    },
+    /// The note is filled with the overlap colour.
+    Overlap,
+}
+
+/// One position of a fretted surface.
+#[derive(Debug, Clone, PartialEq, Eq, uniffi::Record)]
+pub struct SurfaceCellDto {
+    /// The fret of the position, from the open string to the last fret.
+    pub fret: u8,
+    /// The note the position carries.
+    pub note: String,
+    /// The colour slot of every active chord that claims the note, in active
+    /// order and with repeats.
+    pub memberships: Vec<u64>,
+    /// What fills the note.
+    pub fill: NoteFillDto,
+}
+
+/// One row of a fretted surface: the cells of one physical string.
+#[derive(Debug, Clone, PartialEq, Eq, uniffi::Record)]
+pub struct SurfaceRowDto {
+    /// The cells of the row, in fret order.
+    pub cells: Vec<SurfaceCellDto>,
+}
+
+/// The fretted surface of a page: one row per string, in physical string order.
+#[derive(Debug, Clone, PartialEq, Eq, uniffi::Record)]
+pub struct FrettedSurfaceDto {
+    /// The rows of the surface.
+    pub rows: Vec<SurfaceRowDto>,
+}
+
+/// One key of a keyboard surface.
+#[derive(Debug, Clone, PartialEq, Eq, uniffi::Record)]
+pub struct KeyboardKeyDto {
+    /// The absolute pitch of the key.
+    pub pitch: u8,
+    /// The note the key carries.
+    pub note: String,
+    /// The colour slot of every active chord that claims the note.
+    pub memberships: Vec<u64>,
+    /// What fills the key.
+    pub fill: NoteFillDto,
+}
+
+/// The keyboard surface of a page: one key per pitch of the range, in pitch order.
+#[derive(Debug, Clone, PartialEq, Eq, uniffi::Record)]
+pub struct KeyboardSurfaceDto {
+    /// The keys of the surface.
+    pub keys: Vec<KeyboardKeyDto>,
+}

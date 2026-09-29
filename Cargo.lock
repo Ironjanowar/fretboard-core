@@ -214,6 +214,7 @@ name = "fretboard-mobile-ffi"
 version = "0.1.0"
 dependencies = [
  "fretboard-core",
+ "serde_json",
  "uniffi",
 ]
 
