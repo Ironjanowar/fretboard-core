@@ -6,8 +6,10 @@
 //! added the fretted ones — the marked position toggles, clearing the selection,
 //! the tab, the instrument change and the tuning commit — to this same module,
 //! because they are the same kind of rule: a pure function from the state the
-//! page holds to the state it holds next. Nothing is reparsed and nothing is
-//! recomputed from the URL.
+//! page holds to the state it holds next. `C14` added the piano keys
+//! ([`PageEvent::TogglePianoKey`]) and completed the instrument boundary: the
+//! same [`PageEvent::SetInstrument`] now crosses the piano edge as well as the
+//! fretted ones. Nothing is reparsed and nothing is recomputed from the URL.
 //!
 //! Two rules shape every branch:
 //!
@@ -46,8 +48,9 @@
 //! committed state it started from.
 //!
 //! The event families of the later tasks extend this module in turn: the piano
-//! keys arrive with `C14` (`reducer_piano`) and the key/progression application
-//! with `C18` (`reducer_keys`). [`page_event`] returns `None` for an event it does
+//! keys and the instrument boundary arrived with `C14` (`reducer_piano`), and the
+//! key/progression application arrives with `C18` (`reducer_keys`).
+//! [`page_event`] returns `None` for an event it does
 //! not know, and a caller must not read that as "the state stays the same" for an
 //! event the baseline defines elsewhere.
 
@@ -55,10 +58,12 @@ use std::str::FromStr;
 
 use serde_json::Value;
 
-use crate::instrument_catalog::instrument_strings;
+use crate::instrument_catalog::{instrument_strings, keyboard_pitch_range};
 use crate::pitch::change_tuning_note;
 use crate::state::{ChordSpec, InstrumentState, PageState, Position, TuningState, preset_tuning};
-use crate::types::{Fret, InstrumentId, PitchClass, PresetName, QualityId, StringIndex, Tab};
+use crate::types::{
+    Fret, InstrumentId, OpenPitch, PitchClass, PresetName, QualityId, StringIndex, Tab,
+};
 
 /// One page event that changes the page state.
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -81,6 +86,14 @@ pub enum PageEvent {
     /// Mark a position: add it, remove it when it already carries that fret, or
     /// replace the fret of that string.
     ToggleNote(Position),
+    /// Toggle one absolute key of the piano, on its analyzer tab: add it, or
+    /// remove it when it is already selected.
+    ///
+    /// A key outside the frozen keyboard range (`48..=83`) is a typed no-op, and
+    /// so is a toggle on a page that is not the piano or is not on the analyzer
+    /// tab: the pinned handler answers `{:noreply, socket}` for every one of
+    /// those, pushing no patch.
+    TogglePianoKey(OpenPitch),
     /// Clear the selection, keeping the instrument, its tuning and the chords.
     ClearSelection,
     /// Switch to this tab.
@@ -131,6 +144,8 @@ pub enum DraftEvent {
 /// * `remove_chord` and `highlight_chord` carry an occurrence index.
 /// * `clear_all_chords` carries nothing.
 /// * `toggle_note` carries the marked `string` and `fret`.
+/// * `toggle_piano_key` carries the absolute `pitch`; the recorded activation
+///   `key` gates it — only `Enter` or a space (or no key at all) is a toggle.
 /// * `clear_notes` clears the selection.
 /// * `toggle_tab` carries the target tab; an unknown value falls back to the
 ///   visualizer, exactly as the pinned decoder does.
@@ -148,6 +163,7 @@ pub fn page_event(step: &Value) -> Option<PageEvent> {
         Some("clear_all_chords") => Some(PageEvent::ClearAllChords),
         Some("highlight_chord") => index_of(step).map(|index| PageEvent::HighlightChord { index }),
         Some("toggle_note") => position_of(step).map(PageEvent::ToggleNote),
+        Some("toggle_piano_key") => piano_key_of(step).map(PageEvent::TogglePianoKey),
         Some("clear_notes") => Some(PageEvent::ClearSelection),
         Some("toggle_tab") => Some(PageEvent::SetTab(tab_of(step))),
         Some(_) => None,
@@ -191,6 +207,7 @@ pub fn apply_event(state: &PageState, event: &PageEvent) -> PageState {
         PageEvent::ClearAllChords => clear_chords(state),
         PageEvent::HighlightChord { index } => highlight_chord(state, *index),
         PageEvent::ToggleNote(position) => toggle_note(state, *position),
+        PageEvent::TogglePianoKey(pitch) => toggle_piano_key(state, *pitch),
         PageEvent::ClearSelection => clear_selection(state),
         PageEvent::SetTab(tab) => set_tab(state, *tab),
         PageEvent::SetInstrument(instrument) => set_instrument(state, *instrument),
@@ -301,6 +318,40 @@ fn toggle_note(state: &PageState, position: Position) -> PageState {
     next
 }
 
+/// Toggle one absolute key on the piano's analyzer tab.
+///
+/// The pinned `handle_event("toggle_piano_key", …)` applies only on the piano's
+/// analyzer tab and only when the recorded activation key is one it accepts, so
+/// every other page is left exactly as it was. The key keeps the page's
+/// canonical selection: unique and ascending, so the parameters encode the way
+/// [`crate::encode_page_params`] writes them. A value outside the frozen
+/// keyboard range is not a key of the keyboard and is a typed no-op
+/// (`Contract.D10`).
+fn toggle_piano_key(state: &PageState, pitch: OpenPitch) -> PageState {
+    if !matches!(state.instrument, InstrumentState::Piano { .. }) || state.tab != Tab::Analyzer {
+        return state.clone();
+    }
+    let (lowest, highest) = keyboard_pitch_range();
+    if pitch < lowest || pitch > highest {
+        return state.clone();
+    }
+
+    let mut next = state.clone();
+    let InstrumentState::Piano { selected } = &mut next.instrument else {
+        return state.clone();
+    };
+    if let Some(index) = selected.iter().position(|key| *key == pitch) {
+        selected.remove(index);
+    } else {
+        let index = selected
+            .iter()
+            .position(|key| *key > pitch)
+            .unwrap_or(selected.len());
+        selected.insert(index, pitch);
+    }
+    next
+}
+
 /// Clear the selection, whichever kind the instrument is.
 fn clear_selection(state: &PageState) -> PageState {
     let mut next = state.clone();
@@ -333,31 +384,38 @@ fn set_instrument(state: &PageState, instrument: InstrumentId) -> PageState {
         return state.clone();
     }
 
-    let selection = match (&state.instrument, instrument) {
-        (InstrumentState::Piano { .. }, _) | (_, InstrumentId::Piano) => Vec::new(),
-        (InstrumentState::Fretted { selected, .. }, fretted) => {
-            let strings = instrument_strings(fretted).unwrap_or(0);
-            selected
-                .iter()
-                .copied()
-                .filter(|position| u8::from(position.string) < strings)
-                .collect()
-        }
-    };
-
-    let Ok(tuning) = preset_tuning(instrument, &PresetName::from_catalog("Standard")) else {
-        // Every fretted instrument of the frozen catalog has a Standard preset
-        // and the piano has no tuning; the fallback keeps the function total
-        // without an invalid state.
-        return state.clone();
-    };
-
     let mut next = state.clone();
     next.highlight = None;
-    next.instrument = InstrumentState::Fretted {
-        instrument,
-        tuning,
-        selected: selection,
+    next.instrument = match instrument {
+        // Crossing to the piano converts nothing: a string position is never a
+        // key, so the new keyboard begins empty and there is no tuning to carry.
+        InstrumentId::Piano => InstrumentState::Piano {
+            selected: Vec::new(),
+        },
+        fretted => {
+            let selection = match &state.instrument {
+                InstrumentState::Piano { .. } => Vec::new(),
+                InstrumentState::Fretted { selected, .. } => {
+                    let strings = instrument_strings(fretted).unwrap_or(0);
+                    selected
+                        .iter()
+                        .copied()
+                        .filter(|position| u8::from(position.string) < strings)
+                        .collect()
+                }
+            };
+            let Ok(tuning) = preset_tuning(fretted, &PresetName::from_catalog("Standard")) else {
+                // Every fretted instrument of the frozen catalog has a Standard
+                // preset; the fallback keeps the function total without an
+                // invalid state.
+                return state.clone();
+            };
+            InstrumentState::Fretted {
+                instrument: fretted,
+                tuning,
+                selected: selection,
+            }
+        }
     };
     next
 }
@@ -495,6 +553,33 @@ fn position_of(step: &Value) -> Option<Position> {
         string: StringIndex::try_from(u8_of(value.get("string")?)?).ok()?,
         fret: Fret::try_from(u8_of(value.get("fret")?)?).ok()?,
     })
+}
+
+/// The absolute key of a `toggle_piano_key` step.
+///
+/// The pinned handler applies the toggle only when the recorded activation key
+/// is one it accepts (`Enter` or a space) or when no key is recorded at all; a
+/// recorded `Tab` is not a toggle at all, so this answers `None`. The pitch is
+/// read as text or as a number, exactly like the marked positions, and a value
+/// the open-pitch type cannot hold is not a key either. The keyboard-range guard
+/// is the reducer's, not the reader's, so a representable key outside `48..=83`
+/// still reads as a toggle and is refused when it is applied.
+fn piano_key_of(step: &Value) -> Option<OpenPitch> {
+    let value = step.get("value")?;
+    if !activation_accepted(value) {
+        return None;
+    }
+    OpenPitch::try_from(u8_of(value.get("pitch")?)?).ok()
+}
+
+/// Whether a recorded step carries an activation key the handler accepts
+/// (`valid_activation?/1`: `Enter` or a space, or no key at all).
+fn activation_accepted(value: &Value) -> bool {
+    match value.get("key") {
+        None => true,
+        Some(Value::String(key)) => key == "Enter" || key == " ",
+        Some(_) => false,
+    }
 }
 
 /// The target tab of a `toggle_tab` step.
