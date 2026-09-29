@@ -34,8 +34,10 @@
 //! aliases). `C08` added the page-params codec: [`decode_page_params`],
 //! [`encode_page_params`] and the baseline's decoded form ([`decoded_page`]) for
 //! every current page field, plus [`quality_from_label`], the wire-label lookup
-//! its chord tokens need. Scale, progression, transition, derivation and
-//! analyzer support arrive in later tasks, each of them tests first.
+//! its chord tokens need. `C09` added the identity reducer ([`apply_event`] and
+//! the recorded-step reader [`page_event`]) for the chord and highlight events.
+//! Scale, progression, derivation and analyzer support arrive in later tasks,
+//! each of them tests first.
 
 #![forbid(unsafe_code)]
 
@@ -45,6 +47,7 @@ mod instrument_catalog;
 mod interval;
 mod note;
 mod page_params;
+mod reducer;
 mod state;
 mod types;
 
@@ -62,6 +65,7 @@ pub use instrument_catalog::{
 pub use interval::interval_name;
 pub use note::{chromatic_scale, note_at, note_index};
 pub use page_params::{decode_page_params, decoded_page, encode_page_params};
+pub use reducer::{PageEvent, apply_event, page_event};
 pub use state::{
     ChordSpec, InstrumentState, PageState, Position, TuningState, default_state, preset_tuning,
     validate_state,
