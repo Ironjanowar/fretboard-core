@@ -86,6 +86,18 @@ const ALL_SINGLETON_INPUT: [(&str, &str); 3] = [("C", "major"), ("E", "major"), 
 /// and `C7#9` is contained by no candidate key at all.
 const UNMATCHED_INPUT: [(&str, &str); 3] = [("C", "major"), ("G", "major"), ("C", "7#9")];
 
+/// The cap-biting input: six chromatic consecutive major triads, which need a
+/// fourth key once the selection has spent its three. Measured against the
+/// pinned source; no frozen record reaches the cap.
+const CAP_INPUT: [(&str, &str); 6] = [
+    ("D", "major"),
+    ("D#", "major"),
+    ("E", "major"),
+    ("F", "major"),
+    ("F#", "major"),
+    ("G", "major"),
+];
+
 /// Every record of the fixture, in file order.
 fn records() -> Vec<Value> {
     let records = oracle_records(FIXTURE);
@@ -540,6 +552,57 @@ fn the_selection_stops_after_three_groups() {
         .collect();
     let input: BTreeSet<String> = chords.iter().map(render_chord).collect();
     assert_eq!(covered, input, "the fixture's three groups cover the input");
+}
+
+#[test]
+fn the_cap_truncates_a_selection_a_fourth_key_would_have_extended() {
+    // No frozen record reaches the cap: in all fifteen the greedy covers every
+    // chord with three keys or fewer, so lifting the cap changes nothing there —
+    // which a mutation probe demonstrated by passing the whole target with the
+    // cap raised. This input is the one class where the cap is load-bearing: six
+    // chromatic consecutive major triads, measured against the pinned source
+    // (driver `multi-keys.exs`, `extra-multi-keys.jsonl`), whose answer is three
+    // keyed groups plus the chord the fourth key would have carried.
+    let chords: Vec<ChordSpec> = CAP_INPUT
+        .iter()
+        .map(|(root, quality)| chord(root, quality))
+        .collect();
+    assert_eq!(chords.len(), 6);
+    let groups = suggest_multi_keys(&chords);
+    assert_eq!(
+        groups.iter().map(render_group).collect::<Vec<String>>(),
+        [
+            "[C:major:2:6|F:major,G:major]",
+            "[A:major:2:6|D:major,E:major]",
+            "[A#:major:2:6|D#:major,F:major]",
+            "[nil|F#:major]",
+        ],
+        "the pinned answer for the cap-biting input"
+    );
+    assert_eq!(
+        groups.iter().filter(|group| group.key.is_some()).count(),
+        MAX_GROUPS,
+        "exactly the cap's groups carry a key"
+    );
+    assert_eq!(
+        fretboard_core::MULTI_KEY_MAX_GROUPS,
+        MAX_GROUPS,
+        "the exposed cap is the plan's three"
+    );
+
+    // The leftover chord is not uncoverable, which is what makes this a cap and
+    // not an absence: a fourth key would have contained it, and the greedy would
+    // have taken that key if the cap had let it.
+    let leftover = groups
+        .last()
+        .and_then(|group| group.chords.first())
+        .copied()
+        .expect("the keyless group carries the leftover chord");
+    assert_eq!(render_chord(&leftover), "F#:major");
+    assert!(
+        !suggest_keys(std::slice::from_ref(&leftover)).is_empty(),
+        "the leftover chord is contained by candidate keys"
+    );
 }
 
 #[test]
