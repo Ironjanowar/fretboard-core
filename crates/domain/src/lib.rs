@@ -49,9 +49,18 @@
 //! `C12` added full ordered identification ([`identify_notes`],
 //! [`identify_notes_with_bass`] and the [`Interpretation`] they return) with
 //! the approved deterministic tie-break of `Contract.D03`.
+//!
+//! `C13` added the absolute analyzer ([`analyze_pitches`], [`analyze_page`] and
+//! the [`Analysis`] they answer with) and the fretted reductions of the page
+//! reducer ([`PageEvent::ToggleNote`], [`PageEvent::ClearSelection`],
+//! [`PageEvent::SetTab`], [`PageEvent::SetInstrument`],
+//! [`PageEvent::CommitTuning`], and the UI-only tuning draft
+//! [`open_tuning_draft`], [`select_tuning_preset`], [`change_tuning_string`]
+//! with the [`DraftEvent`] reader).
 
 #![forbid(unsafe_code)]
 
+mod analyzer;
 mod chord;
 mod error;
 mod identify;
@@ -65,6 +74,7 @@ mod state;
 mod surface;
 mod types;
 
+pub use analyzer::{Analysis, analyze_page, analyze_pitches};
 pub use chord::{
     ChordDetails, ChordMode, QualityGroup, chord_details, chord_formula, chord_interval_labels,
     chord_quality_label, grouped_qualities, infer_chord_mode, quality_from_label,
@@ -84,7 +94,10 @@ pub use interval::interval_name;
 pub use note::{chromatic_scale, note_at, note_index};
 pub use page_params::{decode_page_params, decoded_page, encode_page_params};
 pub use pitch::{change_tuning_note, closest_pitch, detect_preset, tuning_notes};
-pub use reducer::{PageEvent, apply_event, page_event};
+pub use reducer::{
+    DraftEvent, PageEvent, apply_event, change_tuning_string, draft_event, open_tuning_draft,
+    page_event, select_tuning_preset,
+};
 pub use state::{
     ChordSpec, InstrumentState, PageState, Position, TuningState, default_state, preset_tuning,
     validate_state,
