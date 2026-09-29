@@ -84,6 +84,7 @@ mod progression_catalog;
 mod reducer;
 mod scale;
 mod scale_catalog;
+mod snapshot;
 mod state;
 mod surface;
 mod types;
@@ -133,6 +134,10 @@ pub use reducer::{
 };
 pub use scale::{DiatonicChord, diatonic_chords, scale_notes};
 pub use scale_catalog::{ScaleGroup, grouped_scale_types, scale_formula, scale_label};
+pub use snapshot::{
+    CURRENT_SNAPSHOT_SCHEMA, SNAPSHOT_MIGRATIONS, SnapshotMigration, decode_snapshot,
+    encode_snapshot,
+};
 pub use state::{
     ChordSpec, InstrumentState, PageState, Position, TuningState, default_state, preset_tuning,
     validate_state,

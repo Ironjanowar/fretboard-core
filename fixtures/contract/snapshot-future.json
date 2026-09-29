@@ -1,0 +1,24 @@
+{
+  "schema_version": 2,
+  "page": {
+    "instrument": {
+      "kind": "fretted",
+      "id": "guitar",
+      "tuning": {
+        "pitches": [40, 45, 50, 55, 59, 64],
+        "reference": "Standard"
+      },
+      "selection": [
+        { "string": 0, "fret": 3 },
+        { "string": 1, "fret": 2 }
+      ]
+    },
+    "chords": [
+      { "root": "C", "quality": "major" },
+      { "root": "A", "quality": "min7" },
+      { "root": "C", "quality": "major" }
+    ],
+    "highlight": { "root": "C", "quality": "major" },
+    "tab": "visualizer"
+  }
+}
