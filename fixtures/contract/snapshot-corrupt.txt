@@ -1,0 +1,1 @@
+{"schema_version": 1, "page": {"instrument": {"kind": "fretted", "id": "guitar", "tuning": {"pitches": [40, 45, 50, 55, 5
