@@ -17,7 +17,7 @@ use fretboard_core::{
     InstrumentId, InstrumentKind, InstrumentState, Interpretation, KeyRow, KeySuggestion,
     KeysDraft, MultiKeyGroup, NoteFill, OpenPitch, PageEvent, PageState, PitchClass, Position,
     PresetName, Progression, ProgressionDraft, ProgressionGroup, ProgressionId, QualityId, ScaleId,
-    StringIndex, SurfaceCell, Tab, TuningState, note_index,
+    StringIndex, SurfaceCell, Tab, TuningState, UrlPolicy, note_index,
 };
 
 use crate::dto::{
@@ -26,7 +26,7 @@ use crate::dto::{
     InstrumentStateDto, InterpretationDto, KeyRowDto, KeySuggestionDto, KeyboardKeyDto,
     KeyboardSurfaceDto, MultiKeyGroupDto, NoteFillDto, PageEventDto, PageStateDto, PositionDto,
     ProgressionDto, ProgressionGroupDto, QualityDto, QualityGroupDto, SurfaceCellDto,
-    SurfaceRowDto, TabDto, TuningDto,
+    SurfaceRowDto, TabDto, TuningDto, UrlPolicyDto,
 };
 
 impl From<CoreError> for AdapterError {
@@ -204,6 +204,24 @@ pub(crate) fn tuning_to_dto(tuning: &TuningState) -> TuningDto {
             .collect(),
         reference: tuning.reference.as_str().to_string(),
     }
+}
+
+/// The domain URL policy of a policy DTO (task `C21`).
+///
+/// The adapter makes no policy decision: the scheme, the authority and the path
+/// cross exactly as the caller supplied them. Only `max_bytes` is translated,
+/// and only so far as to fit this platform.
+///
+/// # Errors
+///
+/// [`ErrorCode::OutOfRange`] when the cap does not fit this platform.
+pub(crate) fn url_policy_from_dto(policy: &UrlPolicyDto) -> Result<UrlPolicy, AdapterError> {
+    Ok(UrlPolicy {
+        scheme: policy.scheme.clone(),
+        host: policy.host.clone(),
+        path: policy.path.clone(),
+        max_bytes: wire_count(policy.max_bytes, "max_bytes")?,
+    })
 }
 
 /// The domain position of a position DTO.
