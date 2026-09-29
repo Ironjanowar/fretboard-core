@@ -21,7 +21,7 @@ set -euo pipefail
 REPO_ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
 # The exported API revision and the snapshot schema are read from the frozen
 # contract, so the artifact metadata cannot drift from the fixture (CORE-D08).
-CONTRACT_FILE="${REPO_ROOT}/fixtures/contract/api-v2.json"
+CONTRACT_FILE="${REPO_ROOT}/fixtures/contract/api-v3.json"
 OUT_DIR="${1:-${REPO_ROOT}/dist}"
 NDK_VERSION="28.2.13676358"
 UNIFFI_RUNTIME_DEPENDENCY="net.java.dev.jna:jna:5.17.0"
