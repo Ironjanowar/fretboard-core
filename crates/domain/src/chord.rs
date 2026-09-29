@@ -335,8 +335,12 @@ const SEVENTH_QUALITIES: [QualityId; 8] = [
 /// and only increments a counter bounded by that length, so
 /// `indexing_slicing` and `arithmetic_side_effects` are allowed here: it is
 /// compile-time table comparison, not runtime arithmetic on caller data.
+///
+/// `pub(crate)` so the scale catalog (`C15`) asserts the same frozen-order
+/// invariant over its own table with this one copy of the comparison instead of
+/// growing a second one.
 #[allow(clippy::indexing_slicing, clippy::arithmetic_side_effects)]
-const fn str_eq(left: &str, right: &str) -> bool {
+pub(crate) const fn str_eq(left: &str, right: &str) -> bool {
     let (left, right) = (left.as_bytes(), right.as_bytes());
     if left.len() != right.len() {
         return false;

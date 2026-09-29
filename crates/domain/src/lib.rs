@@ -57,6 +57,12 @@
 //! [`PageEvent::CommitTuning`], and the UI-only tuning draft
 //! [`open_tuning_draft`], [`select_tuning_preset`], [`change_tuning_string`]
 //! with the [`DraftEvent`] reader).
+//!
+//! `C15` added the fifteen scales: the frozen catalog of labels, formulas and
+//! display groups ([`scale_label`], [`scale_formula`],
+//! [`grouped_scale_types`]), the notes of a scale ([`scale_notes`]) and the
+//! diatonic chords its own degree classifier infers ([`diatonic_chords`] and
+//! the [`DiatonicChord`] they return).
 
 #![forbid(unsafe_code)]
 
@@ -70,6 +76,8 @@ mod note;
 mod page_params;
 mod pitch;
 mod reducer;
+mod scale;
+mod scale_catalog;
 mod state;
 mod surface;
 mod types;
@@ -99,6 +107,8 @@ pub use reducer::{
     DraftEvent, PageEvent, apply_event, change_tuning_string, draft_event, open_tuning_draft,
     page_event, select_tuning_preset,
 };
+pub use scale::{DiatonicChord, diatonic_chords, scale_notes};
+pub use scale_catalog::{ScaleGroup, grouped_scale_types, scale_formula, scale_label};
 pub use state::{
     ChordSpec, InstrumentState, PageState, Position, TuningState, default_state, preset_tuning,
     validate_state,
