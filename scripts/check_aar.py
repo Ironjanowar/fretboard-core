@@ -15,7 +15,7 @@ fields are listed in ``FROZEN_FIELDS`` below and must agree everywhere.
 
 The checker is manifest-driven: it validates the *shape* of ``api_version`` and
 that the sidecar and the embedded copy agree, but the frozen revision itself
-(currently 5, ``fixtures/contract/api-v5.json``) is the caller's value, read by
+(currently 6, ``fixtures/contract/api-v6.json``) is the caller's value, read by
 ``scripts/build_aar.sh`` from the contract and pinned in the test suite.
 """
 

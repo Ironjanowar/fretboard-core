@@ -1,0 +1,17 @@
+{
+  "api_version": 6,
+  "snapshot_schema_version": 1,
+  "binding_package": "dev.ironjanowar.fretboard.core",
+  "capabilities": {
+    "catalogs": true,
+    "page_events": true,
+    "fretted_surface": true,
+    "keyboard_surface": true,
+    "page_params": false,
+    "snapshot": true,
+    "analyzer": true,
+    "keys": true,
+    "progressions": true,
+    "tuning_edits": true
+  }
+}
