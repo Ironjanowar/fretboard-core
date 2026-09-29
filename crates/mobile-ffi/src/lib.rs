@@ -32,6 +32,12 @@
 //! committed through [`PageEventDto::CommitKeys`],
 //! [`PageEventDto::CommitSuggestedKeys`] and [`PageEventDto::CommitProgression`].
 //!
+//! The P6 integration added the two string codecs the durable session needs:
+//! the URL import transport ([`import_url`], with the caller-supplied
+//! [`UrlPolicyDto`] and the domain's frozen error codes) and the snapshot
+//! envelope ([`encode_snapshot`], [`decode_snapshot`],
+//! [`snapshot_schema_version`]).
+//!
 //! The adapter is exportable through the pinned UniFFI (0.32.2): every entry
 //! point carries `#[uniffi::export]`, the DTOs carry `uniffi::Record` /
 //! `uniffi::Enum`, [`AdapterError`] carries `uniffi::Error` as an enum (the
@@ -53,10 +59,11 @@ uniffi::setup_scaffolding!();
 
 pub use api::{
     analyze_page, analyze_pitches, apply_page_event, change_tuning_note, change_tuning_string,
-    chord_color_slots, chord_details, default_state, detect_tuning_preset, diatonic_chords,
-    fretted_surface, group_key_suggestions, instruments, key_suggestions, keyboard_surface,
-    multi_key_suggestions, open_tuning_draft, presets, progression_chords, progressions,
-    quality_groups, select_tuning_preset, tuning_notes, validate_state,
+    chord_color_slots, chord_details, decode_snapshot, default_state, detect_tuning_preset,
+    diatonic_chords, encode_snapshot, fretted_surface, group_key_suggestions, import_url,
+    instruments, key_suggestions, keyboard_surface, multi_key_suggestions, open_tuning_draft,
+    presets, progression_chords, progressions, quality_groups, select_tuning_preset,
+    snapshot_schema_version, tuning_notes, validate_state,
 };
 pub use dto::{
     AdapterError, AnalysisDto, ChordDetailsDto, ChordDto, ChordModeDto, DegreeDto, ErrorCode,
@@ -64,5 +71,5 @@ pub use dto::{
     InstrumentStateDto, InterpretationDto, KeyRowDto, KeySuggestionDto, KeyboardKeyDto,
     KeyboardSurfaceDto, MultiKeyGroupDto, NoteFillDto, PageEventDto, PageStateDto, PositionDto,
     ProgressionDto, ProgressionGroupDto, QualityDto, QualityGroupDto, SurfaceCellDto,
-    SurfaceRowDto, TabDto, TuningDto,
+    SurfaceRowDto, TabDto, TuningDto, UrlPolicyDto,
 };

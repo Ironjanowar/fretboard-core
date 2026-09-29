@@ -17,19 +17,21 @@
 #![allow(clippy::needless_pass_by_value)]
 
 use crate::convert::{
-    chord_details_to_dto, chord_from_dto, chord_mode_from_dto, chord_slots_to_dto, chord_to_dto,
-    diatonic_chord_to_dto, fretted_surface_to_dto, instrument_definitions_to_dto, key_row_to_dto,
-    key_suggestion_from_dto, keyboard_surface_to_dto, multi_key_group_to_dto, page_event_from_dto,
-    page_state_from_dto, page_state_to_dto, progression_from_wire, progression_group_to_dto,
-    quality_groups_to_dto, scale_from_wire, tonic_from_wire,
+    analysis_to_dto, chord_details_to_dto, chord_from_dto, chord_mode_from_dto, chord_slots_to_dto,
+    chord_to_dto, diatonic_chord_to_dto, fretted_surface_to_dto, instrument_definitions_to_dto,
+    key_row_to_dto, key_suggestion_from_dto, keyboard_surface_to_dto, multi_key_group_to_dto,
+    page_event_from_dto, page_state_from_dto, page_state_to_dto, progression_from_wire,
+    progression_group_to_dto, quality_groups_to_dto, scale_from_wire, tonic_from_wire,
+    url_policy_from_dto,
 };
-use fretboard_core::{SoundingPitch, StringIndex};
+use fretboard_core::{ImportedPage, SoundingPitch, StringIndex};
 
-use crate::convert::{analysis_to_dto, instrument_from_dto, tuning_from_dto};
+use crate::convert::{instrument_from_dto, tuning_from_dto};
 use crate::dto::{
-    AdapterError, AnalysisDto, ChordDetailsDto, ChordDto, ChordModeDto, FrettedSurfaceDto,
-    InstrumentDefinitionDto, InstrumentDto, KeyRowDto, KeySuggestionDto, KeyboardSurfaceDto,
-    MultiKeyGroupDto, PageEventDto, PageStateDto, ProgressionGroupDto, QualityGroupDto, TuningDto,
+    AdapterError, AnalysisDto, ChordDetailsDto, ChordDto, ChordModeDto, ErrorCode,
+    FrettedSurfaceDto, InstrumentDefinitionDto, InstrumentDto, KeyRowDto, KeySuggestionDto,
+    KeyboardSurfaceDto, MultiKeyGroupDto, PageEventDto, PageStateDto, ProgressionGroupDto,
+    QualityGroupDto, TuningDto, UrlPolicyDto,
 };
 
 /// The default page: guitar, Standard tuning, no chords, no highlight, the
@@ -514,4 +516,85 @@ pub fn diatonic_chords(
             .map(diatonic_chord_to_dto)
             .collect(),
     )
+}
+
+/// Import one absolute URL against a supplied share policy (task `C21`).
+///
+/// The whole decision is the domain transport's: the URL must be the policy's
+/// own scheme, authority and path, and its query names the page. The import is
+/// pure — nothing is fetched — and the policy is never invented here.
+///
+/// A target the transport does not serve (a path other than the page route)
+/// crosses as [`ErrorCode::InvalidUrl`]: the frozen taxonomy
+/// (`02-core-contract.md` section 8) has no `NotFound` code, so the refusal is
+/// reported as an invalid input URL rather than dressed up as a new code.
+///
+/// # Errors
+///
+/// [`AdapterError`] with `InvalidUrl` when the input is not an absolute URL, its
+/// query cannot be decoded, or it names no route this transport serves;
+/// `UnsupportedOrigin` when the scheme, authority or path is outside the policy
+/// or the authority carries credentials; `InputTooLarge` when the input exceeds
+/// the policy's cap.
+#[uniffi::export]
+pub fn import_url(url: String, policy: UrlPolicyDto) -> Result<PageStateDto, AdapterError> {
+    let policy = url_policy_from_dto(&policy)?;
+    let imported =
+        fretboard_core::import_absolute_url(url.as_str(), &policy).map_err(AdapterError::from)?;
+    match imported {
+        ImportedPage::Route(state) => Ok(page_state_to_dto(&state)),
+        ImportedPage::NotFound => Err(AdapterError::new(
+            ErrorCode::InvalidUrl,
+            "the URL names no route this transport serves",
+            Some("url".to_owned()),
+        )),
+    }
+}
+
+/// Encode one page as a snapshot string (task `C21`).
+///
+/// The page is converted into the domain's typed state and handed to the domain
+/// envelope codec, which validates it first: an inconsistent page is never
+/// persisted. The output is the frozen, byte-stable
+/// `{"schema_version": 1, "page": …}` envelope.
+///
+/// # Errors
+///
+/// [`AdapterError`] with the page's own validation codes (`InvalidState`,
+/// `OutOfRange`, `UnknownIdentifier`) and the conversion's own failures, so an
+/// invalid page is refused rather than written.
+#[uniffi::export]
+pub fn encode_snapshot(state: PageStateDto) -> Result<String, AdapterError> {
+    let domain = page_state_from_dto(&state)?;
+    fretboard_core::encode_snapshot(&domain).map_err(AdapterError::from)
+}
+
+/// Decode one snapshot string into a page (task `C21`).
+///
+/// The domain envelope codec reads the version first and refuses a version this
+/// build cannot read, then runs the page through the same strict, validating
+/// reader the rest of the engine uses, so no snapshot path can build a value the
+/// public API could not have built. The input string is borrowed, never
+/// rewritten.
+///
+/// # Errors
+///
+/// [`AdapterError`] with `UnsupportedSchemaVersion` when the envelope declares a
+/// version this build cannot read, and `InvalidSnapshot` when the input is not
+/// JSON, the envelope is malformed, an unknown field appears, or the page is
+/// structurally inconsistent.
+#[uniffi::export]
+pub fn decode_snapshot(snapshot: String) -> Result<PageStateDto, AdapterError> {
+    let state = fretboard_core::decode_snapshot(snapshot.as_bytes()).map_err(AdapterError::from)?;
+    Ok(page_state_to_dto(&state))
+}
+
+/// The snapshot schema version this build writes and reads.
+///
+/// A client compares a stored snapshot's own `schema_version` against this value
+/// instead of carrying a copy of the number.
+#[uniffi::export]
+#[must_use]
+pub const fn snapshot_schema_version() -> u32 {
+    fretboard_core::CURRENT_SNAPSHOT_SCHEMA
 }

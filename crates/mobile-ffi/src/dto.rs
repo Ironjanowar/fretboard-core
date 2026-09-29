@@ -855,3 +855,24 @@ pub struct ProgressionGroupDto {
     /// The group's progressions, in display order.
     pub progressions: Vec<ProgressionDto>,
 }
+
+/// The validated share/import configuration crossing the boundary (task `C21`).
+///
+/// Every field is a decision the engine must not make: the one scheme, the exact
+/// authority and the exact path come from the approved share configuration, and
+/// `max_bytes` is the approved input cap. The adapter only checks that the cap
+/// fits the host platform; it compares nothing itself, so a lookalike suffix
+/// host, a credential-carrying authority, another scheme or another path is
+/// refused by [`crate::import_url`]'s own transport rule rather than by a second
+/// rule kept here.
+#[derive(Debug, Clone, PartialEq, Eq, uniffi::Record)]
+pub struct UrlPolicyDto {
+    /// The one scheme the policy allows, e.g. `https`.
+    pub scheme: String,
+    /// The one authority the policy allows, compared exactly.
+    pub host: String,
+    /// The one path the policy allows, compared exactly.
+    pub path: String,
+    /// The largest accepted input, in bytes.
+    pub max_bytes: u64,
+}
