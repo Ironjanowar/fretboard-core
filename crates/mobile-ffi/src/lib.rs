@@ -37,8 +37,9 @@ mod dto;
 uniffi::setup_scaffolding!();
 
 pub use api::{
-    apply_page_event, chord_color_slots, chord_details, default_state, fretted_surface,
-    instruments, keyboard_surface, quality_groups, validate_state,
+    apply_page_event, change_tuning_note, chord_color_slots, chord_details, default_state,
+    detect_tuning_preset, fretted_surface, instruments, keyboard_surface, quality_groups,
+    tuning_notes, validate_state,
 };
 pub use dto::{
     AdapterError, ChordDetailsDto, ChordDto, ErrorCode, FrettedSurfaceDto, InstrumentDefinitionDto,

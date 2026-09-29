@@ -161,7 +161,7 @@ fn instrument_state_to_dto(state: &InstrumentState) -> InstrumentStateDto {
 }
 
 /// The domain instrument identifier of an instrument DTO.
-const fn instrument_from_dto(instrument: InstrumentDto) -> InstrumentId {
+pub(crate) const fn instrument_from_dto(instrument: InstrumentDto) -> InstrumentId {
     match instrument {
         InstrumentDto::Guitar => InstrumentId::Guitar,
         InstrumentDto::Bass4 => InstrumentId::Bass4,
@@ -183,7 +183,7 @@ const fn instrument_to_dto(instrument: InstrumentId) -> InstrumentDto {
 }
 
 /// The domain tuning state of a tuning DTO.
-fn tuning_from_dto(tuning: &TuningDto) -> Result<TuningState, AdapterError> {
+pub(crate) fn tuning_from_dto(tuning: &TuningDto) -> Result<TuningState, AdapterError> {
     Ok(TuningState {
         pitches: pitches_from_dto(&tuning.pitches)?,
         reference: PresetName::parse(&tuning.reference).map_err(AdapterError::from)?,
@@ -191,7 +191,7 @@ fn tuning_from_dto(tuning: &TuningDto) -> Result<TuningState, AdapterError> {
 }
 
 /// The tuning DTO of a domain tuning state.
-fn tuning_to_dto(tuning: &TuningState) -> TuningDto {
+pub(crate) fn tuning_to_dto(tuning: &TuningState) -> TuningDto {
     TuningDto {
         pitches: tuning
             .pitches
@@ -394,4 +394,13 @@ fn note_fill_to_dto(fill: NoteFill) -> NoteFillDto {
         },
         NoteFill::Overlap => NoteFillDto::Overlap,
     }
+}
+
+/// The note names of one tuning, one per physical string.
+#[must_use]
+pub(crate) fn tuning_notes_to_dto(tuning: &TuningState) -> Vec<String> {
+    fretboard_core::tuning_notes(tuning)
+        .iter()
+        .map(|note| note.name().to_owned())
+        .collect()
 }

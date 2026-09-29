@@ -21,9 +21,12 @@ use crate::convert::{
     instrument_definitions_to_dto, keyboard_surface_to_dto, page_event_from_dto,
     page_state_from_dto, page_state_to_dto, quality_groups_to_dto,
 };
+use fretboard_core::StringIndex;
+
+use crate::convert::{instrument_from_dto, tuning_from_dto};
 use crate::dto::{
     AdapterError, ChordDetailsDto, ChordDto, FrettedSurfaceDto, InstrumentDefinitionDto,
-    KeyboardSurfaceDto, PageEventDto, PageStateDto, QualityGroupDto,
+    InstrumentDto, KeyboardSurfaceDto, PageEventDto, PageStateDto, QualityGroupDto, TuningDto,
 };
 
 /// The default page: guitar, Standard tuning, no chords, no highlight, the
@@ -156,4 +159,77 @@ pub fn keyboard_surface(state: PageStateDto) -> Result<KeyboardSurfaceDto, Adapt
 pub fn chord_color_slots(state: PageStateDto) -> Result<Vec<u64>, AdapterError> {
     let domain = page_state_from_dto(&state)?;
     Ok(chord_slots_to_dto(&domain))
+}
+
+/// The frozen baseline's label for a tuning that matches no preset.
+const CUSTOM_PRESET_LABEL: &str = "Custom";
+
+/// The note names of a tuning, one per physical string, in string order.
+///
+/// # Errors
+///
+/// [`AdapterError`] with `OutOfRange` when a pitch is outside `0..=127` and
+/// `InvalidState` when the tuning is not valid for a fretted instrument.
+#[uniffi::export]
+pub fn tuning_notes(tuning: TuningDto) -> Result<Vec<String>, AdapterError> {
+    let domain = tuning_from_dto(&tuning)?;
+    Ok(crate::convert::tuning_notes_to_dto(&domain))
+}
+
+/// The preset a set of pitches matches exactly, or the baseline's own label for
+/// a tuning that matches none.
+///
+/// Detection is exact: a tuning that differs from every preset of the instrument
+/// by a single semitone is not the nearest preset. The frozen baseline answers
+/// the literal `Custom` in that case (`Fretboard.Music.detect_preset/2`, pinned
+/// by `fixtures/oracle/tunings.jsonl`, case
+/// `detect_preset/guitar/Standard-semitone-shifted`), and this entry point
+/// answers the same string, so a client never invents the label. The domain's own
+/// API keeps the typed meaning (`Option<PresetName>`); only the wire carries it.
+///
+/// # Errors
+///
+/// [`AdapterError`] with `OutOfRange` for a pitch outside `0..=127`.
+#[uniffi::export]
+pub fn detect_tuning_preset(
+    instrument: InstrumentDto,
+    tuning: TuningDto,
+) -> Result<String, AdapterError> {
+    let domain = tuning_from_dto(&tuning)?;
+    Ok(
+        fretboard_core::detect_preset(instrument_from_dto(instrument), &domain.pitches)
+            .map_or_else(|| "Custom".to_owned(), |preset| preset.to_string()),
+    )
+}
+
+/// Edit one string's note against the fixed reference of the tuning.
+///
+/// The note resolves to the pitch of its class nearest **that string's pitch in
+/// the preset the tuning is anchored to**, never the string's current pitch, so
+/// repeated edits cannot drift the anchor. The returned tuning is a new value:
+/// nothing is mutated, which is what lets a client hold a draft and apply or
+/// discard it without touching the page it came from.
+///
+/// # Errors
+///
+/// [`AdapterError`] with the domain's stable codes: `OutOfRange` for a string the
+/// instrument does not have, `UnknownIdentifier` for a note name outside the
+/// chromatic scale, `InvalidState` for the piano, a wrong pitch count or a
+/// reference that is not a preset of the instrument.
+#[uniffi::export]
+pub fn change_tuning_note(
+    instrument: InstrumentDto,
+    tuning: TuningDto,
+    string: u8,
+    note: String,
+) -> Result<TuningDto, AdapterError> {
+    let domain = tuning_from_dto(&tuning)?;
+    let edited = fretboard_core::change_tuning_note(
+        instrument_from_dto(instrument),
+        &domain,
+        StringIndex::try_from(string).map_err(AdapterError::from)?,
+        &note,
+    )
+    .map_err(AdapterError::from)?;
+    Ok(crate::convert::tuning_to_dto(&edited))
 }
