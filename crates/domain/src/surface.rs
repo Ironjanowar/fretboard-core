@@ -34,6 +34,7 @@ use crate::chord::chord_details;
 use crate::error::CoreError;
 use crate::instrument_catalog::{instrument_frets, instrument_strings, keyboard_pitch_range};
 use crate::note::note_at;
+use crate::pitch::note_of;
 use crate::state::{ChordSpec, InstrumentState, PageState};
 use crate::types::{Fret, InstrumentId, OpenPitch, PitchClass};
 
@@ -126,7 +127,7 @@ pub fn keyboard_keys(chords: &[ChordSpec]) -> Vec<KeyboardKey> {
     (u8::from(low)..=u8::from(high))
         .filter_map(|pitch| {
             let pitch = OpenPitch::try_from(pitch).ok()?;
-            let note = note_of(pitch)?;
+            let note = note_of(pitch);
             Some(KeyboardKey {
                 pitch,
                 note,
@@ -250,15 +251,6 @@ pub fn note_fill(
         [only] => slot_of(chords, only).map_or(NoteFill::Overlap, NoteFill::Slot),
         _ => NoteFill::Overlap,
     }
-}
-
-/// The pitch class of one pitch, which is its position modulo twelve.
-///
-/// The conversion is total in practice — a remainder below twelve is always a
-/// class — and fallible by type, so it answers with an option.
-#[allow(clippy::integer_division)]
-fn note_of(pitch: OpenPitch) -> Option<PitchClass> {
-    PitchClass::try_from(u8::from(pitch) % 12).ok()
 }
 
 /// The notes of every active chord, computed once per surface.
