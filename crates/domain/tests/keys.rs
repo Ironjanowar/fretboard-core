@@ -105,24 +105,63 @@ const FLAT_ROOT_CASES: [&str; 2] = [
 /// The six triad qualities the map answers with.
 const TRIAD_QUALITIES: [&str; 6] = ["major", "minor", "dim", "aug", "sus2", "sus4"];
 
-/// The named triad bases of `docs/p5-decision-evidence.md`, which reads them
-/// from the pinned `@quality_to_triad` table: the qualities that do not map to
-/// their own triad base.
-const NAMED_TRIAD_BASES: [(&str, &str); 14] = [
-    ("9b5", "dim"),
+/// The pinned `@quality_to_triad` map, all forty-seven rows.
+///
+/// `docs/p5-decision-evidence.md` quotes fourteen of these; this is the complete
+/// map, transcribed from `lib/fretboard/music/scale.ex` of the pin (whose last
+/// entry, `dim7b13`, carries no trailing comma there). The frozen `keys.jsonl`
+/// records fix twenty-five of the forty-seven rows by score, so the rows a
+/// fixture score never reaches are pinned here instead: a base that is wrong,
+/// missing or duplicated fails the test below rather than quietly scoring a
+/// chord as another quality's triad.
+const TRIAD_BASE_MAP: [(&str, &str); 47] = [
+    ("11", "major"),
+    ("13", "major"),
+    ("13b9", "major"),
+    ("7", "major"),
+    ("7#11", "major"),
+    ("7#9", "major"),
+    ("7b13", "major"),
     ("7b5", "dim"),
-    ("m11b5", "dim"),
-    ("dim_maj7", "dim"),
-    ("dim7b13", "dim"),
+    ("7b9", "major"),
+    ("7b9b13", "major"),
+    ("7sus4", "sus4"),
+    ("9", "major"),
     ("9#5", "aug"),
+    ("9b5", "dim"),
+    ("add9", "major"),
+    ("aug", "aug"),
     ("aug7", "aug"),
     ("aug_maj7", "aug"),
-    ("7#9", "major"),
-    ("7b9", "major"),
-    ("13b9", "major"),
-    ("7b13", "major"),
+    ("dim", "dim"),
+    ("dim7", "dim"),
+    ("dim7b13", "dim"),
+    ("dim_maj7", "dim"),
+    ("m11b5", "dim"),
+    ("m7b5", "dim"),
     ("m_add9", "minor"),
-    ("7sus4", "sus4"),
+    ("maj11", "major"),
+    ("maj13", "major"),
+    ("maj6", "major"),
+    ("maj6_9", "major"),
+    ("maj7", "major"),
+    ("maj7#11", "major"),
+    ("maj9", "major"),
+    ("major", "major"),
+    ("min11", "minor"),
+    ("min13", "minor"),
+    ("min6", "minor"),
+    ("min6_9", "minor"),
+    ("min7", "minor"),
+    ("min7b13", "minor"),
+    ("min9", "minor"),
+    ("min_maj7", "minor"),
+    ("minor", "minor"),
+    ("sus13", "sus4"),
+    ("sus2", "sus2"),
+    ("sus4", "sus4"),
+    ("sus9", "sus2"),
+    ("susb9", "sus2"),
 ];
 
 /// The three chords of `suggest_keys/no-compatible-three-major-triad-roots`,
@@ -481,7 +520,7 @@ fn containment_decides_which_candidates_are_suggested() {
 }
 
 #[test]
-fn the_triad_base_map_covers_the_catalog_and_answers_its_named_entries() {
+fn the_triad_base_map_covers_the_catalog_and_answers_every_pinned_row() {
     // The map is the pinned `@quality_to_triad`: every one of the 47 frozen
     // qualities has a triad base, and the base is one of the six triad
     // qualities. A map that misses an entry, or that falls back to the
@@ -502,20 +541,23 @@ fn the_triad_base_map_covers_the_catalog_and_answers_its_named_entries() {
         "the frozen catalog carries 47 qualities"
     );
 
-    // A triad maps to itself...
-    for id in TRIAD_QUALITIES {
-        let quality: QualityId = id.parse().expect("a catalog triad");
-        assert_eq!(
-            triad_base(quality).as_str(),
-            id,
-            "{id}: a triad maps to itself"
-        );
-    }
+    // The pinned map has one row per catalog quality and no other: a missing row
+    // or a row the catalog does not have fails here, not in a score by accident.
+    let catalog: BTreeSet<&str> = QualityId::ALL
+        .iter()
+        .map(|quality| quality.as_str())
+        .collect();
+    let mapped: BTreeSet<&str> = TRIAD_BASE_MAP.iter().map(|(id, _base)| *id).collect();
+    assert_eq!(
+        mapped.len(),
+        TRIAD_BASE_MAP.len(),
+        "the pinned map carries no duplicated row"
+    );
+    assert_eq!(mapped, catalog, "the pinned map covers the catalog exactly");
 
-    // ...and these are the named entries the decision evidence reads from the
-    // pinned table: the sevenths, sixths, added tones, ninths and suspensions
-    // that do not carry their own triad base.
-    for (id, base) in NAMED_TRIAD_BASES {
+    // Every row answers its pinned base, the six triads included: they are rows
+    // of the same map, so a triad that stopped mapping to itself fails below.
+    for (id, base) in TRIAD_BASE_MAP {
         let quality: QualityId = id.parse().expect("a catalog quality");
         assert_eq!(
             triad_base(quality).as_str(),
