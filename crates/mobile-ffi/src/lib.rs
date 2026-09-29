@@ -17,6 +17,14 @@
 //! (`dev.ironjanowar.fretboard.core`); generated Kotlin is a build output of a
 //! later task (`C05`) and is never hand-written or committed.
 //!
+//! The P3 integration added the tuning edits ([`change_tuning_note`],
+//! [`tuning_notes`], [`detect_tuning_preset`]) and then the analyzer slice
+//! [`C13`] needs: the page analysis ([`analyze_page`]), the
+//! instrument-independent analyzer ([`analyze_pitches`]) and the UI-only tuning
+//! draft ([`open_tuning_draft`], [`select_tuning_preset`],
+//! [`change_tuning_string`]) that [`apply_page_event`] commits through
+//! [`PageEventDto::CommitTuning`].
+//!
 //! The adapter is exportable through the pinned UniFFI (0.32.2): every entry
 //! point carries `#[uniffi::export]`, the DTOs carry `uniffi::Record` /
 //! `uniffi::Enum`, [`AdapterError`] carries `uniffi::Error` as an enum (the
@@ -37,13 +45,14 @@ mod dto;
 uniffi::setup_scaffolding!();
 
 pub use api::{
-    apply_page_event, change_tuning_note, chord_color_slots, chord_details, default_state,
-    detect_tuning_preset, fretted_surface, instruments, keyboard_surface, quality_groups,
+    analyze_page, analyze_pitches, apply_page_event, change_tuning_note, change_tuning_string,
+    chord_color_slots, chord_details, default_state, detect_tuning_preset, fretted_surface,
+    instruments, keyboard_surface, open_tuning_draft, quality_groups, select_tuning_preset,
     tuning_notes, validate_state,
 };
 pub use dto::{
-    AdapterError, ChordDetailsDto, ChordDto, ErrorCode, FrettedSurfaceDto, InstrumentDefinitionDto,
-    InstrumentDto, InstrumentKindDto, InstrumentStateDto, KeyboardKeyDto, KeyboardSurfaceDto,
-    NoteFillDto, PageEventDto, PageStateDto, PositionDto, QualityDto, QualityGroupDto,
-    SurfaceCellDto, SurfaceRowDto, TabDto, TuningDto,
+    AdapterError, AnalysisDto, ChordDetailsDto, ChordDto, ErrorCode, FrettedSurfaceDto,
+    InstrumentDefinitionDto, InstrumentDto, InstrumentKindDto, InstrumentStateDto,
+    InterpretationDto, KeyboardKeyDto, KeyboardSurfaceDto, NoteFillDto, PageEventDto, PageStateDto,
+    PositionDto, QualityDto, QualityGroupDto, SurfaceCellDto, SurfaceRowDto, TabDto, TuningDto,
 };

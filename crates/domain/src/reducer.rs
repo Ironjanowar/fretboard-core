@@ -2,10 +2,12 @@
 //! (`02-core-contract.md` section 9, and the pinned
 //! `lib/fretboard_web/live/fretboard_live.ex`, `handle_event/3`).
 //!
-//! This file belongs to task `C09`. The reducer is pure: it takes the current
-//! [`PageState`] and one page event and returns the next state. Nothing is
-//! reparsed and nothing is recomputed from the URL — a tap acts on the state the
-//! page already holds, which is what the baseline's own socket does.
+//! `C09` wrote the identity families (the chord list and the highlight); `C13`
+//! added the fretted ones — the marked position toggles, clearing the selection,
+//! the tab, the instrument change and the tuning commit — to this same module,
+//! because they are the same kind of rule: a pure function from the state the
+//! page holds to the state it holds next. Nothing is reparsed and nothing is
+//! recomputed from the URL.
 //!
 //! Two rules shape every branch:
 //!
@@ -19,24 +21,47 @@
 //!   baseline counts patches, so a no-op add, a same-chip highlight toggle and an
 //!   out-of-range index all return the state untouched; the identity comparison is
 //!   `(root, quality)`, never the pitch set, so `C6` and `Amin7` — the same four
-//!   notes — stay two different chords while an exact duplicate is refused.
+//!   notes — stay two different chords while an exact duplicate is refused. The
+//!   fretted families keep the rule (an out-of-range string index is a typed
+//!   no-op, never a truncated list), and the one baseline step that pushes without
+//!   changing page state is the tuning modal's Apply, described below.
 //!
-//! The event families of the later tasks extend this module: the fretted
-//! selection and tuning drafts arrive with `C13` (`reducer_fretted`), the piano
-//! keys with `C14` (`reducer_piano`) and the key/progression application with
-//! `C18` (`reducer_keys`). [`page_event`] returns `None` for an event it does not
-//! know, and a caller must not read that as "the state stays the same" for an
+//! ## The tuning modal is UI-only
+//!
+//! The tuning draft is deliberately **not** part of [`PageState`]. The contract
+//! states it (`02-core-contract.md` section 8: *"Tuning draft operations live
+//! outside `PageState`; callers commit only on Apply"*), and the baseline behaves
+//! that way: `open_tuning_modal`, `select_preset`, `change_string` and
+//! `close_tuning_modal` only assign UI fields and push **no** page patch, while
+//! `apply_tuning` commits the draft. This module therefore exposes:
+//!
+//! * [`open_tuning_draft`], [`select_tuning_preset`] and [`change_tuning_string`]
+//!   — the pure draft math, whose guards are the handler's own (an unknown preset,
+//!   an index the instrument does not have and a note outside the chromatic scale
+//!   all leave the draft unchanged, and the piano has no draft at all);
+//! * [`DraftEvent`] and [`draft_event`], which read those recorded steps;
+//! * [`PageEvent::CommitTuning`], the commit itself.
+//!
+//! A draft edit can only ever return a new draft, so it cannot mutate the
+//! committed state it started from.
+//!
+//! The event families of the later tasks extend this module in turn: the piano
+//! keys arrive with `C14` (`reducer_piano`) and the key/progression application
+//! with `C18` (`reducer_keys`). [`page_event`] returns `None` for an event it does
+//! not know, and a caller must not read that as "the state stays the same" for an
 //! event the baseline defines elsewhere.
 
 use std::str::FromStr;
 
 use serde_json::Value;
 
-use crate::state::{ChordSpec, PageState};
-use crate::types::{PitchClass, QualityId};
+use crate::instrument_catalog::instrument_strings;
+use crate::pitch::change_tuning_note;
+use crate::state::{ChordSpec, InstrumentState, PageState, Position, TuningState, preset_tuning};
+use crate::types::{Fret, InstrumentId, PitchClass, PresetName, QualityId, StringIndex, Tab};
 
 /// One page event that changes the page state.
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+#[derive(Debug, Clone, PartialEq, Eq)]
 pub enum PageEvent {
     /// Add one occurrence of a chord, unless that identity is already present.
     AddChord(ChordSpec),
@@ -53,9 +78,51 @@ pub enum PageEvent {
         /// The index of the occurrence the tap landed on.
         index: usize,
     },
+    /// Mark a position: add it, remove it when it already carries that fret, or
+    /// replace the fret of that string.
+    ToggleNote(Position),
+    /// Clear the selection, keeping the instrument, its tuning and the chords.
+    ClearSelection,
+    /// Switch to this tab.
+    SetTab(Tab),
+    /// Change the instrument, keeping the parts of the selection that still fit.
+    SetInstrument(InstrumentId),
+    /// Commit a tuning draft: set the committed tuning, and nothing else.
+    CommitTuning(TuningState),
 }
 
-/// Read one recorded step into a page event, when this task implements it.
+/// One recorded step of the tuning modal: the UI-only half of the fretted
+/// transitions.
+///
+/// None of these changes the page state; [`DraftEvent::Apply`] is the moment the
+/// draft is *committed*, which the caller does with
+/// [`PageEvent::CommitTuning`] — the draft itself is not part of the recorded
+/// step, so [`page_event`] cannot read it.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub enum DraftEvent {
+    /// Open the modal: the draft starts from the committed tuning, or does not
+    /// open at all on the piano.
+    Open,
+    /// Select a preset for the draft; an unknown preset leaves it unchanged.
+    SelectPreset {
+        /// The preset's wire name, which may name no preset of the instrument.
+        name: String,
+    },
+    /// Edit one string of the draft; an invalid index or note leaves it
+    /// unchanged.
+    ChangeString {
+        /// The recorded string index, as text (the handler parses it).
+        string: String,
+        /// The recorded note name, as the handler receives it.
+        note: String,
+    },
+    /// Close the modal, discarding the draft.
+    Close,
+    /// Commit the draft (see [`PageEvent::CommitTuning`]).
+    Apply,
+}
+
+/// Read one recorded step into a page event, when this module implements it.
 ///
 /// A step is the baseline's own shape: an optional `event` name, the `kind` of
 /// interaction, and the `value` the handler received. The mapping is:
@@ -63,6 +130,14 @@ pub enum PageEvent {
 /// * `add_chord` and a submit of the chord form both add one occurrence.
 /// * `remove_chord` and `highlight_chord` carry an occurrence index.
 /// * `clear_all_chords` carries nothing.
+/// * `toggle_note` carries the marked `string` and `fret`.
+/// * `clear_notes` clears the selection.
+/// * `toggle_tab` carries the target tab; an unknown value falls back to the
+///   visualizer, exactly as the pinned decoder does.
+/// * A `change` of `#instrument-form` carries the new instrument.
+/// * The tuning modal's steps are [`draft_event`]'s, not page events: the
+///   baseline pushes no patch for them, and `apply_tuning` cannot be read from
+///   the step because the draft it commits is not in it.
 /// * A field change touches no page state here: the chord form's own change only
 ///   validates, and the field changes that do move the page — the instrument and
 ///   the tab selects — belong to their tasks (`C13`, `C14`).
@@ -72,8 +147,35 @@ pub fn page_event(step: &Value) -> Option<PageEvent> {
         Some("remove_chord") => index_of(step).map(|index| PageEvent::RemoveChord { index }),
         Some("clear_all_chords") => Some(PageEvent::ClearAllChords),
         Some("highlight_chord") => index_of(step).map(|index| PageEvent::HighlightChord { index }),
+        Some("toggle_note") => position_of(step).map(PageEvent::ToggleNote),
+        Some("clear_notes") => Some(PageEvent::ClearSelection),
+        Some("toggle_tab") => Some(PageEvent::SetTab(tab_of(step))),
         Some(_) => None,
-        None => submitted_chord(step).map(PageEvent::AddChord),
+        None => submitted_chord(step)
+            .map(PageEvent::AddChord)
+            .or_else(|| instrument_change(step)),
+    }
+}
+
+/// Read one recorded step of the tuning modal.
+///
+/// These steps never change the page state, which is why they are not
+/// [`PageEvent`]s: the baseline assigns `show_tuning_modal` / `modal_tuning_state`
+/// and pushes no patch. `None` means the step is not a tuning-modal step this
+/// module knows.
+pub fn draft_event(step: &Value) -> Option<DraftEvent> {
+    match step.get("event").and_then(Value::as_str)? {
+        "open_tuning_modal" => Some(DraftEvent::Open),
+        "close_tuning_modal" => Some(DraftEvent::Close),
+        "apply_tuning" => Some(DraftEvent::Apply),
+        "select_preset" => Some(DraftEvent::SelectPreset {
+            name: step.get("value")?.get("preset")?.as_str()?.to_owned(),
+        }),
+        "change_string" => Some(DraftEvent::ChangeString {
+            string: text_of(step.get("value")?.get("string")?)?,
+            note: step.get("value")?.get("note")?.as_str()?.to_owned(),
+        }),
+        _ => None,
     }
 }
 
@@ -88,6 +190,11 @@ pub fn apply_event(state: &PageState, event: &PageEvent) -> PageState {
         PageEvent::RemoveChord { index } => remove_chord(state, *index),
         PageEvent::ClearAllChords => clear_chords(state),
         PageEvent::HighlightChord { index } => highlight_chord(state, *index),
+        PageEvent::ToggleNote(position) => toggle_note(state, *position),
+        PageEvent::ClearSelection => clear_selection(state),
+        PageEvent::SetTab(tab) => set_tab(state, *tab),
+        PageEvent::SetInstrument(instrument) => set_instrument(state, *instrument),
+        PageEvent::CommitTuning(tuning) => commit_tuning(state, tuning),
     }
 }
 
@@ -146,6 +253,204 @@ fn highlight_chord(state: &PageState, index: usize) -> PageState {
     next
 }
 
+/// Mark one position on a fretted page.
+///
+/// The string keeps exactly one position: the tapped position's fret replaces
+/// the string's own when it differs, and removes it when it is the same. A string
+/// the instrument does not have is not a position at all — the state is left
+/// exactly as it was (`Contract.D10`: the safer typed rejection of a malformed
+/// action, never a panic and never a position the page cannot hold).
+fn toggle_note(state: &PageState, position: Position) -> PageState {
+    let InstrumentState::Fretted { instrument, .. } = &state.instrument else {
+        return state.clone();
+    };
+    let strings = instrument_strings(*instrument).unwrap_or(0);
+    if u8::from(position.string) >= strings {
+        return state.clone();
+    }
+
+    let mut next = state.clone();
+    let InstrumentState::Fretted { selected, .. } = &mut next.instrument else {
+        return state.clone();
+    };
+
+    let current = selected
+        .iter()
+        .find(|entry| entry.string == position.string)
+        .map(|entry| entry.fret);
+    match current {
+        Some(fret) if fret == position.fret => {
+            selected.retain(|entry| entry.string != position.string);
+        }
+        Some(_) => {
+            if let Some(entry) = selected
+                .iter_mut()
+                .find(|entry| entry.string == position.string)
+            {
+                entry.fret = position.fret;
+            }
+        }
+        None => {
+            let index = selected
+                .iter()
+                .position(|entry| entry.string > position.string)
+                .unwrap_or(selected.len());
+            selected.insert(index, position);
+        }
+    }
+    next
+}
+
+/// Clear the selection, whichever kind the instrument is.
+fn clear_selection(state: &PageState) -> PageState {
+    let mut next = state.clone();
+    match &mut next.instrument {
+        InstrumentState::Fretted { selected, .. } => selected.clear(),
+        InstrumentState::Piano { selected } => selected.clear(),
+    }
+    next
+}
+
+/// Switch the tab; the tab the page already shows changes nothing.
+fn set_tab(state: &PageState, tab: Tab) -> PageState {
+    if state.tab == tab {
+        return state.clone();
+    }
+    let mut next = state.clone();
+    next.tab = tab;
+    next
+}
+
+/// Change the instrument, exactly as `handle_event("change_instrument", …)`
+/// does: reset to the new instrument's Standard tuning, clear the highlight, and
+/// keep the parts of the selection the new instrument can hold.
+///
+/// Switching between fretted instruments keeps the marked positions whose string
+/// index still exists; crossing the piano boundary converts nothing — piano keys
+/// are never string positions and string positions are never keys.
+fn set_instrument(state: &PageState, instrument: InstrumentId) -> PageState {
+    if instrument_of(state) == instrument {
+        return state.clone();
+    }
+
+    let selection = match (&state.instrument, instrument) {
+        (InstrumentState::Piano { .. }, _) | (_, InstrumentId::Piano) => Vec::new(),
+        (InstrumentState::Fretted { selected, .. }, fretted) => {
+            let strings = instrument_strings(fretted).unwrap_or(0);
+            selected
+                .iter()
+                .copied()
+                .filter(|position| u8::from(position.string) < strings)
+                .collect()
+        }
+    };
+
+    let Ok(tuning) = preset_tuning(instrument, &PresetName::from_catalog("Standard")) else {
+        // Every fretted instrument of the frozen catalog has a Standard preset
+        // and the piano has no tuning; the fallback keeps the function total
+        // without an invalid state.
+        return state.clone();
+    };
+
+    let mut next = state.clone();
+    next.highlight = None;
+    next.instrument = InstrumentState::Fretted {
+        instrument,
+        tuning,
+        selected: selection,
+    };
+    next
+}
+
+/// Commit a tuning draft: the tuning changes and nothing else does.
+///
+/// A draft whose pitch count is not the instrument's is not committed — the
+/// state would be invalid, and `Contract.D10` prefers a typed no-op to an
+/// impossible page.
+fn commit_tuning(state: &PageState, tuning: &TuningState) -> PageState {
+    let InstrumentState::Fretted { instrument, .. } = &state.instrument else {
+        return state.clone();
+    };
+    if tuning.pitches.len() != usize::from(instrument_strings(*instrument).unwrap_or(0)) {
+        return state.clone();
+    }
+
+    let mut next = state.clone();
+    let InstrumentState::Fretted {
+        tuning: committed, ..
+    } = &mut next.instrument
+    else {
+        return state.clone();
+    };
+    *committed = tuning.clone();
+    next
+}
+
+/// The draft a page opens: its committed tuning, or none on the piano, which has
+/// no tuning and no modal.
+#[must_use]
+pub fn open_tuning_draft(state: &PageState) -> Option<TuningState> {
+    match &state.instrument {
+        InstrumentState::Fretted { tuning, .. } => Some(tuning.clone()),
+        InstrumentState::Piano { .. } => None,
+    }
+}
+
+/// Select a preset for a draft.
+///
+/// The draft is replaced only when the name is a preset of that instrument; an
+/// unknown name, or one that belongs to another instrument, leaves the draft
+/// exactly as it was, which is what the baseline's `nil` branch does.
+#[must_use]
+pub fn select_tuning_preset(
+    instrument: InstrumentId,
+    draft: &TuningState,
+    name: &str,
+) -> TuningState {
+    let Ok(preset) = PresetName::parse(name) else {
+        return draft.clone();
+    };
+    preset_tuning(instrument, &preset).unwrap_or_else(|_error| draft.clone())
+}
+
+/// Edit one string of a draft.
+///
+/// The guards are the handler's own: the string index is parsed from its recorded
+/// text and must be a string of the instrument, and the note must be one of the
+/// twelve sharp names (`Music.chromatic_scale()`), so a flat spelling the chord
+/// note lookup would widen is still rejected here. Anything else leaves the draft
+/// unchanged. The edit resolves against the draft's own reference, never against
+/// its current pitches (`C11`), so repeated edits cannot drift the anchor.
+#[must_use]
+pub fn change_tuning_string(
+    instrument: InstrumentId,
+    draft: &TuningState,
+    string: &str,
+    note: &str,
+) -> TuningState {
+    let Ok(index) = string.parse::<i64>() else {
+        return draft.clone();
+    };
+    let Ok(index) = u8::try_from(index) else {
+        return draft.clone();
+    };
+    let Ok(string_index) = StringIndex::try_from(index) else {
+        return draft.clone();
+    };
+    if PitchClass::from_str(note).is_err() {
+        return draft.clone();
+    }
+    change_tuning_note(instrument, draft, string_index, note).unwrap_or_else(|_error| draft.clone())
+}
+
+/// The instrument of a page, whichever kind it is.
+const fn instrument_of(state: &PageState) -> InstrumentId {
+    match &state.instrument {
+        InstrumentState::Fretted { instrument, .. } => *instrument,
+        InstrumentState::Piano { .. } => InstrumentId::Piano,
+    }
+}
+
 /// The chord of a step's value, when it names one of the frozen identities.
 fn chord_of(step: &Value) -> Option<ChordSpec> {
     let chord = step.get("value")?.get("chord")?;
@@ -166,6 +471,47 @@ fn submitted_chord(step: &Value) -> Option<ChordSpec> {
     }
 }
 
+/// The instrument of a recorded `change` of the instrument select.
+fn instrument_change(step: &Value) -> Option<PageEvent> {
+    if step.get("kind").and_then(Value::as_str) != Some("change") {
+        return None;
+    }
+    if step.get("selector").and_then(Value::as_str) != Some("#instrument-form") {
+        return None;
+    }
+    let instrument = step
+        .get("value")?
+        .get("instrument")?
+        .as_str()?
+        .parse()
+        .ok()?;
+    Some(PageEvent::SetInstrument(instrument))
+}
+
+/// The marked position of a step's value, as text or as a number.
+fn position_of(step: &Value) -> Option<Position> {
+    let value = step.get("value")?;
+    Some(Position {
+        string: StringIndex::try_from(u8_of(value.get("string")?)?).ok()?,
+        fret: Fret::try_from(u8_of(value.get("fret")?)?).ok()?,
+    })
+}
+
+/// The target tab of a `toggle_tab` step.
+///
+/// The pinned decoder answers `:visualizer` for anything outside the two names,
+/// including a missing value, so this cannot fail.
+fn tab_of(step: &Value) -> Tab {
+    match step
+        .get("value")
+        .and_then(|value| value.get("tab"))
+        .and_then(Value::as_str)
+    {
+        Some("analyzer") => Tab::Analyzer,
+        _ => Tab::Visualizer,
+    }
+}
+
 /// The occurrence index of a step's value, as a number or as a decimal string.
 fn index_of(step: &Value) -> Option<usize> {
     match step.get("value")?.get("index")? {
@@ -173,6 +519,24 @@ fn index_of(step: &Value) -> Option<usize> {
         Value::Number(number) => number
             .as_u64()
             .and_then(|value| usize::try_from(value).ok()),
+        Value::Null | Value::Bool(_) | Value::Array(_) | Value::Object(_) => None,
+    }
+}
+
+/// A small unsigned value as text or as a number.
+fn u8_of(value: &Value) -> Option<u8> {
+    match value {
+        Value::String(text) => text.parse::<u8>().ok(),
+        Value::Number(number) => number.as_u64().and_then(|value| u8::try_from(value).ok()),
+        Value::Null | Value::Bool(_) | Value::Array(_) | Value::Object(_) => None,
+    }
+}
+
+/// A value as text, whatever JSON type the step carries it in.
+fn text_of(value: &Value) -> Option<String> {
+    match value {
+        Value::String(text) => Some(text.clone()),
+        Value::Number(number) => Some(number.to_string()),
         Value::Null | Value::Bool(_) | Value::Array(_) | Value::Object(_) => None,
     }
 }

@@ -500,6 +500,102 @@ pub enum PageEventDto {
         /// The index of the occurrence the tap landed on.
         index: u64,
     },
+    /// Mark a position: add it, remove it when it already carries that fret, or
+    /// replace the fret of that string.
+    ToggleNote {
+        /// The marked position.
+        position: PositionDto,
+    },
+    /// Clear the selection, keeping the instrument, its tuning and the chords.
+    ClearSelection,
+    /// Switch to this tab.
+    SetTab {
+        /// The target tab.
+        tab: TabDto,
+    },
+    /// Change the instrument, keeping the parts of the selection that still fit.
+    SetInstrument {
+        /// The new instrument.
+        instrument: InstrumentDto,
+    },
+    /// Commit a tuning draft: set the committed tuning, and nothing else.
+    ///
+    /// The draft itself is UI-only (`02-core-contract.md` section 8: *"Tuning
+    /// draft operations live outside `PageState`; callers commit only on
+    /// Apply"*). A client holds it with [`crate::open_tuning_draft`],
+    /// [`crate::select_tuning_preset`] and [`crate::change_tuning_string`], and
+    /// hands the edited value over here on Apply.
+    CommitTuning {
+        /// The edited tuning to commit.
+        tuning: TuningDto,
+    },
+}
+
+/// One identification of a chord answer, as the analyzer shows it.
+///
+/// The notes are in formula order and the interval labels in their own order,
+/// deliberately not zipped (`Contract.D01`); the list of interval labels with a
+/// member the input lacks is [`Self::missing_intervals`], and
+/// [`Self::incomplete`] says whether the missing-member styling applies.
+#[derive(Debug, Clone, PartialEq, Eq, uniffi::Record)]
+pub struct InterpretationDto {
+    /// The chord root.
+    pub root: String,
+    /// The chord quality identifier.
+    pub quality: String,
+    /// Whether the input set equals the formula's interval set.
+    pub exact: bool,
+    /// Whether the input is a subset of the formula missing at most two tones.
+    pub incomplete: bool,
+    /// The chord members, in formula order.
+    pub notes: Vec<String>,
+    /// The contextual role of each member, in label order.
+    pub intervals: Vec<String>,
+    /// The contextual labels of the formula tones the input lacks.
+    pub missing_intervals: Vec<String>,
+    /// The bass note the answer was seen from.
+    pub bass: String,
+    /// The inversion `0..=6`, or `None` when the bass is not a chord tone the
+    /// baseline maps to an inversion.
+    pub inversion: Option<u8>,
+    /// The slash label: the plain label in root position or for a non-chord
+    /// bass, and the label with `/{bass}` appended otherwise.
+    pub slash_label: String,
+}
+
+/// What a selection is: the analyzer's answer (`02-core-contract.md` section 8).
+///
+/// `Empty` is a computed empty analysis; a missing analysis is the *absent*
+/// `None` the analyzer tab gate answers on the visualizer tab, which is a
+/// different thing (`Evaluation.analysis` is optional and absent on visualizer).
+#[derive(Debug, Clone, PartialEq, Eq, uniffi::Enum)]
+pub enum AnalysisDto {
+    /// Nothing is selected.
+    Empty,
+    /// One pitch class at one height.
+    Single {
+        /// The note.
+        note: String,
+    },
+    /// One class at distinct heights, or two classes seen from their lowest
+    /// heights.
+    Interval {
+        /// The lower note name.
+        low: String,
+        /// The higher note name. Equal to `low` for the one-class case.
+        high: String,
+        /// The simple interval name between them (`Octave` across octaves).
+        label: String,
+    },
+    /// Three or more pitch classes.
+    Chords {
+        /// The representatives, in ascending sounding order.
+        notes: Vec<String>,
+        /// The note of the lowest sounding pitch.
+        bass: String,
+        /// Every identification, in the baseline's order.
+        interpretations: Vec<InterpretationDto>,
+    },
 }
 
 /// What fills one note of a surface.
