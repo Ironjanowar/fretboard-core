@@ -78,6 +78,8 @@ mod multi_keys;
 mod note;
 mod page_params;
 mod pitch;
+mod progression;
+mod progression_catalog;
 mod reducer;
 mod scale;
 mod scale_catalog;
@@ -114,6 +116,11 @@ pub use multi_keys::{
 pub use note::{chromatic_scale, note_at, note_index};
 pub use page_params::{decode_page_params, decoded_page, encode_page_params};
 pub use pitch::{change_tuning_note, closest_pitch, detect_preset, tuning_notes};
+pub use progression::{progression_chords, progression_label};
+pub use progression_catalog::{
+    Degree, Progression, ProgressionGroup, all_progressions, grouped_progressions, progression,
+    progression_by_str, progression_categories,
+};
 pub use reducer::{
     DraftEvent, PageEvent, apply_event, change_tuning_string, draft_event, open_tuning_draft,
     page_event, select_tuning_preset,
@@ -129,6 +136,6 @@ pub use surface::{
     keyboard_keys, keyboard_surface, note_fill, note_fill_of, slot_of,
 };
 pub use types::{
-    Fret, InstrumentId, OpenPitch, PitchClass, PresetName, QualityId, ScaleId, SoundingPitch,
-    StringIndex, Tab,
+    Fret, InstrumentId, OpenPitch, PitchClass, PresetName, ProgressionId, QualityId, ScaleId,
+    SoundingPitch, StringIndex, Tab,
 };
