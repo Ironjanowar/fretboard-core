@@ -221,7 +221,7 @@ fn a_rejected_edit_crosses_as_a_typed_error() {
     assert_eq!(
         code_of(change_tuning_note(
             InstrumentDto::Piano,
-            guitar_standard.clone(),
+            guitar_standard,
             0,
             "C".to_owned()
         )),

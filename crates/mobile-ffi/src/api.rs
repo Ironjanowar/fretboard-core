@@ -198,7 +198,10 @@ pub fn detect_tuning_preset(
     let domain = tuning_from_dto(&tuning)?;
     Ok(
         fretboard_core::detect_preset(instrument_from_dto(instrument), &domain.pitches)
-            .map_or_else(|| "Custom".to_owned(), |preset| preset.to_string()),
+            .map_or_else(
+                || CUSTOM_PRESET_LABEL.to_owned(),
+                |preset| preset.to_string(),
+            ),
     )
 }
 
