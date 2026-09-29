@@ -72,6 +72,9 @@ mod error;
 mod identify;
 mod instrument_catalog;
 mod interval;
+mod key_groups;
+mod keys;
+mod multi_keys;
 mod note;
 mod page_params;
 mod pitch;
@@ -100,6 +103,14 @@ pub use instrument_catalog::{
     tuning_presets,
 };
 pub use interval::interval_name;
+pub use key_groups::{IMPERFECT_ROWS, KeyRow, group_key_suggestions};
+pub use keys::{
+    KEY_PAGE_MIN_CHORDS, KeySuggestion, page_key_suggestions, suggest_keys, triad_base,
+};
+pub use multi_keys::{
+    MULTI_KEY_MAX_GROUPS, MULTI_KEY_PAGE_MIN_CHORDS, MultiKeyGroup, page_multi_key_suggestions,
+    suggest_multi_keys,
+};
 pub use note::{chromatic_scale, note_at, note_index};
 pub use page_params::{decode_page_params, decoded_page, encode_page_params};
 pub use pitch::{change_tuning_note, closest_pitch, detect_preset, tuning_notes};
