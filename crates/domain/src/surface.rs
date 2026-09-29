@@ -161,8 +161,7 @@ pub fn fretted_surface(state: &PageState) -> Result<Vec<Vec<SurfaceCell>>, CoreE
         .iter()
         .copied()
         .map(note_of)
-        .collect::<Option<Vec<PitchClass>>>()
-        .ok_or_else(|| CoreError::out_of_range("open_pitch"))?;
+        .collect::<Vec<PitchClass>>();
 
     fretted_rows(*instrument, &notes, &state.chords)
 }
