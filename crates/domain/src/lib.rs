@@ -36,8 +36,10 @@
 //! every current page field, plus [`quality_from_label`], the wire-label lookup
 //! its chord tokens need. `C09` added the identity reducer ([`apply_event`] and
 //! the recorded-step reader [`page_event`]) for the chord and highlight events.
-//! Scale, progression, derivation and analyzer support arrive in later tasks,
-//! each of them tests first.
+//! `C10` added the visualizer surface ([`fretted_rows`], [`keyboard_keys`],
+//! [`note_fill`] and its colour half [`identity_slots`]). Scale, progression,
+//! derivation and analyzer support arrive in later tasks, each of them tests
+//! first.
 
 #![forbid(unsafe_code)]
 
@@ -49,6 +51,7 @@ mod note;
 mod page_params;
 mod reducer;
 mod state;
+mod surface;
 mod types;
 
 pub use chord::{
@@ -69,6 +72,9 @@ pub use reducer::{PageEvent, apply_event, page_event};
 pub use state::{
     ChordSpec, InstrumentState, PageState, Position, TuningState, default_state, preset_tuning,
     validate_state,
+};
+pub use surface::{
+    KeyboardKey, NoteFill, SurfaceCell, fretted_rows, identity_slots, keyboard_keys, note_fill,
 };
 pub use types::{
     Fret, InstrumentId, OpenPitch, PitchClass, PresetName, QualityId, ScaleId, SoundingPitch,
