@@ -33,7 +33,7 @@ Artifact metadata fields (frozen, snake_case, top level of both JSON documents):
     api_version                int    frozen adapter API version (currently 8)
     snapshot_schema_version    int    frozen snapshot schema version (currently 1)
     binding_package            str    "dev.ironjanowar.fretboard.core" (uniffi.toml)
-    abis                       list   ABI directory names, e.g. ["arm64-v8a"]
+    abis                       list   ["arm64-v8a", "x86_64"]
     min_sdk                    int    Android minimum API level (29 per DEC-10)
     licenses                   list   non-empty list of non-empty license ids
 
@@ -50,19 +50,20 @@ AAR layout the checker must validate:
     AndroidManifest.xml                    present in the archive
     META-INF/fretboard-engine/metadata.json  embedded artifact metadata
 
-See ``docs/toolchains.md`` and ``docs/decisions.md`` (``DEC-10``): only
-``arm64-v8a`` ships and ``minSdk`` is 29. This checker is manifest-driven -- it
-compares the archive against the ABI set and levels the manifest declares, it
-does not hardcode the shipped ABI set.
+See ``docs/toolchains.md`` and ``docs/decisions.md`` (``DEC-10``):
+``arm64-v8a`` and ``x86_64`` ship and ``minSdk`` is 29. The checker requires
+that shipped ABI set and compares the archive against the metadata declaration.
 """
 
 import io
 import json
 import os
+import struct
 import subprocess
 import sys
 import tempfile
 import unittest
+import warnings
 import zipfile
 from pathlib import Path
 
@@ -89,6 +90,10 @@ SNAPSHOT_SCHEMA_VERSION = 1
 BINDING_PACKAGE = "dev.ironjanowar.fretboard.core"
 ABI_ARM64 = "arm64-v8a"
 ABI_X86_64 = "x86_64"
+ABI_ARMEABI_V7A = "armeabi-v7a"
+SHIPPED_ABIS = (ABI_ARM64, ABI_X86_64)
+EM_X86_64 = 62
+EM_AARCH64 = 183
 MIN_SDK = 29
 LICENSES = ["MIT", "Apache-2.0"]
 
@@ -112,7 +117,6 @@ FROZEN_METADATA_FIELDS = (
 # A minimal, valid-enough class-file header; the checker only needs the entry
 # names inside classes.jar, never the bytecode semantics.
 CLASS_FILE_BYTES = b"\xca\xfe\xba\xbe\x00\x00\x00\x34"
-NATIVE_LIBRARY_BYTES = b"\x7fELF" + b"\x00" * 56 + b"libfretboard_mobile_ffi"
 CONSUMER_RULES_BYTES = (
     b"-keep class dev.ironjanowar.fretboard.core.** { *; }\n"
 )
@@ -124,17 +128,49 @@ CONSUMER_RULES_BYTES = (
 
 
 def zip_bytes(entries):
-    """Build a ZIP archive in memory from a name -> bytes mapping."""
+    """Build a ZIP in memory from a mapping or an ordered entry sequence."""
     buffer = io.BytesIO()
     with zipfile.ZipFile(buffer, "w", zipfile.ZIP_DEFLATED) as archive:
-        for name, data in entries.items():
-            archive.writestr(name, data)
+        items = entries.items() if hasattr(entries, "items") else entries
+        with warnings.catch_warnings():
+            warnings.filterwarnings(
+                "ignore", message="Duplicate name: .*", category=UserWarning
+            )
+            for name, data in items:
+                archive.writestr(name, data)
     return buffer.getvalue()
 
 
 def json_bytes(document):
     """Serialize a metadata document the way the release tooling writes it."""
     return (json.dumps(document, sort_keys=True, indent=2) + "\n").encode("utf-8")
+
+
+def elf64_shared_object(machine):
+    """Build a complete ELF64 header for a little-endian shared object."""
+    identification = b"\x7fELF\x02\x01\x01\x00" + b"\x00" * 8
+    return identification + struct.pack(
+        "<HHIQQQIHHHHHH",
+        3,  # e_type: ET_DYN
+        machine,
+        1,  # e_version: EV_CURRENT
+        0,  # e_entry
+        0,  # e_phoff
+        0,  # e_shoff
+        0,  # e_flags
+        64,  # e_ehsize
+        56,  # e_phentsize
+        0,  # e_phnum
+        64,  # e_shentsize
+        0,  # e_shnum
+        0,  # e_shstrndx
+    )
+
+
+NATIVE_LIBRARY_BYTES_BY_ABI = {
+    ABI_ARM64: elf64_shared_object(EM_AARCH64),
+    ABI_X86_64: elf64_shared_object(EM_X86_64),
+}
 
 
 def binding_classes_jar(package=BINDING_PACKAGE):
@@ -158,7 +194,7 @@ def artifact_metadata(**overrides):
         "api_version": API_VERSION,
         "snapshot_schema_version": SNAPSHOT_SCHEMA_VERSION,
         "binding_package": BINDING_PACKAGE,
-        "abis": [ABI_ARM64],
+        "abis": list(SHIPPED_ABIS),
         "min_sdk": MIN_SDK,
         "licenses": list(LICENSES),
     }
@@ -175,14 +211,16 @@ def without(document, field):
 
 def aar_bytes(
     *,
-    abis=(ABI_ARM64,),
+    abis=SHIPPED_ABIS,
     extra_abi_dirs=(),
-    duplicate_library_abi=None,
+    stale_library_abi=None,
+    duplicate_native_path_abi=None,
     binding_classes_package=BINDING_PACKAGE,
     include_binding_classes=True,
     include_consumer_rules=True,
     embedded_metadata=None,
     include_embedded_metadata=True,
+    native_library_bytes_by_abi=NATIVE_LIBRARY_BYTES_BY_ABI,
 ):
     """A synthetic AAR whose layout matches ``abis`` and the given switches."""
     entries = {
@@ -190,12 +228,16 @@ def aar_bytes(
         "R.txt": b"",
     }
     for abi in abis:
-        entries["jni/%s/%s" % (abi, NATIVE_LIB_NAME)] = NATIVE_LIBRARY_BYTES
+        entries["jni/%s/%s" % (abi, NATIVE_LIB_NAME)] = (
+            native_library_bytes_by_abi[abi]
+        )
     for abi in extra_abi_dirs:
-        entries["jni/%s/%s" % (abi, NATIVE_LIB_NAME)] = NATIVE_LIBRARY_BYTES
-    if duplicate_library_abi is not None:
-        entries["jni/%s/libstale_engine.so" % duplicate_library_abi] = (
-            NATIVE_LIBRARY_BYTES
+        entries["jni/%s/%s" % (abi, NATIVE_LIB_NAME)] = elf64_shared_object(
+            EM_AARCH64
+        )
+    if stale_library_abi is not None:
+        entries["jni/%s/libstale_engine.so" % stale_library_abi] = (
+            native_library_bytes_by_abi[stale_library_abi]
         )
     if include_binding_classes:
         entries["classes.jar"] = binding_classes_jar(binding_classes_package)
@@ -205,7 +247,13 @@ def aar_bytes(
         entries[EMBEDDED_METADATA_PATH] = json_bytes(
             embedded_metadata if embedded_metadata is not None else artifact_metadata()
         )
-    return zip_bytes(entries)
+    archive_entries = list(entries.items())
+    if duplicate_native_path_abi is not None:
+        native_path = "jni/%s/%s" % (duplicate_native_path_abi, NATIVE_LIB_NAME)
+        archive_entries.append(
+            (native_path, native_library_bytes_by_abi[duplicate_native_path_abi])
+        )
+    return zip_bytes(archive_entries)
 
 
 def make_case(
@@ -308,17 +356,38 @@ class HappyPathTests(CheckAarTestCase):
         aar, manifest = make_case(self.tmp)
         self.assert_accepted(invoke(aar, manifest))
 
-    def test_manifest_driven_abi_set_is_accepted(self):
-        # The checker trusts the declared ABI set; it does not hardcode the
-        # currently shipped one.
-        metadata = artifact_metadata(abis=[ABI_ARM64, ABI_X86_64])
+    def test_shipped_abi_set_is_accepted(self):
+        metadata = artifact_metadata(abis=list(SHIPPED_ABIS))
         aar, manifest = make_case(
-            self.tmp, manifest=metadata, abis=(ABI_ARM64, ABI_X86_64)
+            self.tmp, manifest=metadata, abis=SHIPPED_ABIS
         )
         self.assert_accepted(invoke(aar, manifest))
 
 
 class NativeLibraryTests(CheckAarTestCase):
+    def test_native_libraries_mislabeled_with_the_other_architecture_are_rejected(self):
+        swapped_libraries = {
+            ABI_ARM64: NATIVE_LIBRARY_BYTES_BY_ABI[ABI_X86_64],
+            ABI_X86_64: NATIVE_LIBRARY_BYTES_BY_ABI[ABI_ARM64],
+        }
+        aar, manifest = make_case(
+            self.tmp, native_library_bytes_by_abi=swapped_libraries
+        )
+        self.assert_rejected(
+            invoke(aar, manifest),
+            "when each ABI directory contains the other architecture's ELF library",
+        )
+
+    def test_artifact_missing_a_required_shipped_abi_is_rejected(self):
+        metadata = artifact_metadata(abis=[ABI_ARM64])
+        aar, manifest = make_case(
+            self.tmp, manifest=metadata, abis=(ABI_ARM64,)
+        )
+        self.assert_rejected(
+            invoke(aar, manifest),
+            "when the artifact and metadata both omit the required x86_64 ABI",
+        )
+
     def test_missing_native_library_for_declared_abi_is_rejected(self):
         aar, manifest = make_case(self.tmp, abis=())
         self.assert_rejected(
@@ -327,17 +396,29 @@ class NativeLibraryTests(CheckAarTestCase):
         )
 
     def test_unexpected_native_library_for_undeclared_abi_is_rejected(self):
-        aar, manifest = make_case(self.tmp, extra_abi_dirs=(ABI_X86_64,))
+        aar, manifest = make_case(self.tmp, extra_abi_dirs=(ABI_ARMEABI_V7A,))
         self.assert_rejected(
             invoke(aar, manifest),
             "for a native library for an ABI the manifest does not declare",
         )
 
-    def test_duplicate_native_library_in_declared_abi_is_rejected(self):
-        aar, manifest = make_case(self.tmp, duplicate_library_abi=ABI_ARM64)
+    def test_stale_differently_named_native_library_in_declared_abi_is_rejected(self):
+        aar, manifest = make_case(self.tmp, stale_library_abi=ABI_ARM64)
         self.assert_rejected(
             invoke(aar, manifest),
-            "for two native libraries in one declared ABI directory",
+            "for a stale, differently named native library in a declared ABI directory",
+        )
+
+    def test_duplicate_entries_for_exact_native_library_path_are_rejected(self):
+        native_path = "jni/%s/%s" % (ABI_X86_64, NATIVE_LIB_NAME)
+        aar, manifest = make_case(
+            self.tmp, duplicate_native_path_abi=ABI_X86_64
+        )
+        with zipfile.ZipFile(aar) as archive:
+            self.assertEqual(2, archive.namelist().count(native_path))
+        self.assert_rejected(
+            invoke(aar, manifest),
+            "for duplicate ZIP entries with the exact path %s" % native_path,
         )
 
 

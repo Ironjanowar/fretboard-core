@@ -74,9 +74,8 @@ is reported with its actual evidence.
 3. **Signing custody.** The agent-generated keystore (A5) is a real release key.
    You will need to keep a copy outside this environment; losing it means the
    next APK cannot update the installed one.
-4. **ABIs.** The delivered APK is `arm64-v8a` only (DEC-02/DEC-03: no emulator
-   evidence; your phone's ABI is confirmed by the app itself). Say the word if
-   you also want `x86_64` for an emulator.
+4. **ABIs (resolved).** Published Android artifacts carry `arm64-v8a` for the
+   physical phone and `x86_64` for the API 37 emulator.
 5. **Share origin (`DEC-07`)** stays open and only blocks P6. The interim APK
    must disable sharing with an explicit explanation rather than invent a host.
 
