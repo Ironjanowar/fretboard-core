@@ -96,8 +96,8 @@ pub use chord::{
 };
 pub use codec::url::{
     ImportedPage, QueryParams, QueryValue, RequestTarget, UrlPolicy, decode_query,
-    import_absolute_url, import_legacy_url, import_request_target, parse_request_target,
-    query_params_to_json,
+    encode_page_query, encode_query, import_absolute_url, import_legacy_url, import_request_target,
+    parse_request_target, query_params_to_json,
 };
 pub use error::CoreError;
 pub use identify::{

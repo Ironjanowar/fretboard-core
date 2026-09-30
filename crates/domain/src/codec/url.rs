@@ -28,7 +28,7 @@ use std::collections::BTreeMap;
 
 use serde_json::{Map, Value};
 
-use crate::{CoreError, PageState, decode_page_params};
+use crate::{CoreError, PageState, decode_page_params, encode_page_params};
 
 /// The one path the page route serves; every other path is a 404.
 const PAGE_ROUTE: &str = "/";
@@ -254,6 +254,69 @@ pub fn import_absolute_url(url: &str, policy: &UrlPolicy) -> Result<ImportedPage
 /// and is ignored field-locally, exactly as the baseline ignored it.
 pub fn query_params_to_json(params: &QueryParams) -> Value {
     Value::Object(json_params(params))
+}
+
+/// Encode parameters back into a query string (task `A20`'s core half).
+///
+/// The reading side is frozen and this is its inverse, so the rules come from what
+/// the frozen transport itself accepts (`fixtures/oracle/query-transport.jsonl`):
+///
+/// * `#` is percent-encoded. A raw one truncates the query: the frozen
+///   `query_transport/raw-fragment-not-a-sharp` case reads `/?chords=C#maj` as
+///   `C`, so a sharp root must be emitted as `%23`.
+/// * a space becomes `+`, which the frozen transport decodes as a space
+///   (`query_transport/plus-sign-becomes-space`), and that is what keeps a
+///   reference like `Half Step Down` readable.
+/// * `,` stays literal: `/?chords=Cmaj,Amin` is the legacy spelling, and the
+///   frozen transport reads both it and `%2C` as a comma.
+/// * `%` becomes `%25`; anything outside the unreserved set is escaped.
+/// * an array is written as `key[]=value`, the spelling the frozen transport
+///   accepts for a repeated key; `encode_page_params` never produces one, and the
+///   branch is here so the function has no silent case.
+///
+/// The query string carries no leading `?`: the base it is appended to belongs to
+/// the caller, and this file has no opinion about any origin.
+pub fn encode_query(params: &Map<String, Value>) -> String {
+    let mut pairs: Vec<String> = Vec::new();
+    for (key, value) in params {
+        match value {
+            Value::Array(items) => {
+                for item in items {
+                    pairs.push(format!("{key}[]={}", escape(text_of(item).as_str())));
+                }
+            }
+            other => pairs.push(format!("{key}={}", escape(text_of(other).as_str()))),
+        }
+    }
+    pairs.join("&")
+}
+
+/// The page's own query: its canonical parameters, encoded.
+pub fn encode_page_query(state: &PageState) -> String {
+    encode_query(&encode_page_params(state))
+}
+
+/// One parameter value as text. Everything this crate emits is a string; a value
+/// of another shape is written as its JSON text rather than dropped.
+fn text_of(value: &Value) -> String {
+    value
+        .as_str()
+        .map_or_else(|| value.to_string(), ToOwned::to_owned)
+}
+
+/// One value, escaped for a query string, with the frozen spelling above.
+fn escape(value: &str) -> String {
+    let mut escaped = String::with_capacity(value.len());
+    for byte in value.bytes() {
+        match byte {
+            b'A'..=b'Z' | b'a'..=b'z' | b'0'..=b'9' | b'-' | b'.' | b'_' | b'~' | b',' => {
+                escaped.push(char::from(byte));
+            }
+            b' ' => escaped.push('+'),
+            other => escaped.push_str(&format!("%{other:02X}")),
+        }
+    }
+    escaped
 }
 
 fn json_params(params: &QueryParams) -> Map<String, Value> {
