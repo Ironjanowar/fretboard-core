@@ -306,12 +306,27 @@ fn text_of(value: &Value) -> String {
 
 /// One uppercase hex digit.
 ///
-/// A match rather than a lookup table: this crate denies panicking indexing, and the
-/// caller masks the nibble to four bits, so there is no index and no silent fallback.
+/// A match rather than arithmetic or a lookup table: this crate denies panicking indexing
+/// and arithmetic with side effects, and the caller masks the nibble to four bits, so the
+/// documented fallback below cannot be reached.
 fn hex_digit(nibble: u8) -> char {
     match nibble {
-        0..=9 => char::from(b'0' + nibble),
-        _ => char::from(b'A' + nibble - 10),
+        0 => '0',
+        1 => '1',
+        2 => '2',
+        3 => '3',
+        4 => '4',
+        5 => '5',
+        6 => '6',
+        7 => '7',
+        8 => '8',
+        9 => '9',
+        10 => 'A',
+        11 => 'B',
+        12 => 'C',
+        13 => 'D',
+        14 => 'E',
+        _ => 'F',
     }
 }
 
