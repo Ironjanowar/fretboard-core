@@ -309,7 +309,7 @@ fn text_of(value: &Value) -> String {
 /// A match rather than arithmetic or a lookup table: this crate denies panicking indexing
 /// and arithmetic with side effects, and the caller masks the nibble to four bits, so the
 /// documented fallback below cannot be reached.
-fn hex_digit(nibble: u8) -> char {
+const fn hex_digit(nibble: u8) -> char {
     match nibble {
         0 => '0',
         1 => '1',
