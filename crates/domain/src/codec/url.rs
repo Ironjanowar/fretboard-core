@@ -30,9 +30,6 @@ use serde_json::{Map, Value};
 
 use crate::{CoreError, PageState, decode_page_params, encode_page_params};
 
-/// The uppercase hex digits one escaped byte is written with.
-const HEX: &[u8; 16] = b"0123456789ABCDEF";
-
 /// The one path the page route serves; every other path is a 404.
 const PAGE_ROUTE: &str = "/";
 
@@ -307,6 +304,17 @@ fn text_of(value: &Value) -> String {
         .map_or_else(|| value.to_string(), ToOwned::to_owned)
 }
 
+/// One uppercase hex digit.
+///
+/// A match rather than a lookup table: this crate denies panicking indexing, and the
+/// caller masks the nibble to four bits, so there is no index and no silent fallback.
+fn hex_digit(nibble: u8) -> char {
+    match nibble {
+        0..=9 => char::from(b'0' + nibble),
+        _ => char::from(b'A' + nibble - 10),
+    }
+}
+
 /// One value, escaped for a query string, with the frozen spelling above.
 fn escape(value: &str) -> String {
     let mut escaped = String::with_capacity(value.len());
@@ -318,8 +326,8 @@ fn escape(value: &str) -> String {
             b' ' => escaped.push('+'),
             other => {
                 escaped.push('%');
-                escaped.push(char::from(HEX[(other >> 4) as usize]));
-                escaped.push(char::from(HEX[(other & 0x0F) as usize]));
+                escaped.push(hex_digit((other >> 4) & 0x0F));
+                escaped.push(hex_digit(other & 0x0F));
             }
         }
     }
