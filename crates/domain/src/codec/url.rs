@@ -30,6 +30,9 @@ use serde_json::{Map, Value};
 
 use crate::{CoreError, PageState, decode_page_params, encode_page_params};
 
+/// The uppercase hex digits one escaped byte is written with.
+const HEX: &[u8; 16] = b"0123456789ABCDEF";
+
 /// The one path the page route serves; every other path is a 404.
 const PAGE_ROUTE: &str = "/";
 
@@ -313,7 +316,11 @@ fn escape(value: &str) -> String {
                 escaped.push(char::from(byte));
             }
             b' ' => escaped.push('+'),
-            other => escaped.push_str(&format!("%{other:02X}")),
+            other => {
+                escaped.push('%');
+                escaped.push(char::from(HEX[(other >> 4) as usize]));
+                escaped.push(char::from(HEX[(other & 0x0F) as usize]));
+            }
         }
     }
     escaped
