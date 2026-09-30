@@ -27,7 +27,7 @@ NDK_VERSION="28.2.13676358"
 UNIFFI_RUNTIME_DEPENDENCY="net.java.dev.jna:jna:5.17.0"
 BINDING_PACKAGE="dev.ironjanowar.fretboard.core"
 MIN_SDK="29"
-ABI="arm64-v8a"
+ABIS=("arm64-v8a" "x86_64")
 LICENSES='["MIT"]'
 
 : "${ANDROID_HOME:?ANDROID_HOME must point at the pinned Android SDK}"
@@ -41,9 +41,10 @@ SOURCE_COMMIT="$(git rev-parse HEAD)"
 WORK="$(mktemp -d)"
 trap 'rm -rf "${WORK}"' EXIT
 
-echo "==> cross-building ${ABI} (NDK ${NDK_VERSION})"
+echo "==> cross-building ${ABIS[*]} (NDK ${NDK_VERSION})"
 ANDROID_NDK_HOME="${ANDROID_HOME}/ndk/${NDK_VERSION}" \
-  cargo ndk -t "${ABI}" -o "${WORK}/jniLibs" build -p fretboard-mobile-ffi --locked --release
+  cargo ndk -t "${ABIS[0]}" -t "${ABIS[1]}" -o "${WORK}/jniLibs" \
+  build -p fretboard-mobile-ffi --locked --release
 
 echo "==> generating the Kotlin bindings from the host library metadata"
 cargo build -p fretboard-mobile-ffi --locked
@@ -58,13 +59,16 @@ mkdir -p "${WORK}/classes"
   -classpath "${JNA_JAR}" \
   -d "${WORK}/classes" \
   $(find "${WORK}/kotlin" -name '*.kt')
-(cd "${WORK}/classes" && "${JAVA_HOME}/bin/jar" cf "${WORK}/classes.jar" .)
+python3 "${REPO_ROOT}/scripts/package_zip.py" \
+  "${WORK}/classes" "${WORK}/classes.jar"
 
 echo "==> assembling the AAR"
 mkdir -p "${WORK}/aar/META-INF/fretboard-engine"
 cp "${WORK}/classes.jar" "${WORK}/aar/classes.jar"
-mkdir -p "${WORK}/aar/jni/${ABI}"
-cp "${WORK}/jniLibs/${ABI}"/libfretboard_mobile_ffi.so "${WORK}/aar/jni/${ABI}/"
+for ABI in "${ABIS[@]}"; do
+  mkdir -p "${WORK}/aar/jni/${ABI}"
+  cp "${WORK}/jniLibs/${ABI}"/libfretboard_mobile_ffi.so "${WORK}/aar/jni/${ABI}/"
+done
 printf '' > "${WORK}/aar/R.txt"
 cat > "${WORK}/aar/AndroidManifest.xml" <<'MANIFEST'
 <manifest xmlns:android="http://schemas.android.com/apk/res/android" package="dev.ironjanowar.fretboard.core" />
@@ -99,7 +103,7 @@ metadata = {
     "api_version": CONTRACT["api_version"],
     "snapshot_schema_version": CONTRACT["snapshot_schema_version"],
     "binding_package": "${BINDING_PACKAGE}",
-    "abis": ["${ABI}"],
+    "abis": ["arm64-v8a", "x86_64"],
     "min_sdk": int("${MIN_SDK}"),
     "licenses": json.loads('${LICENSES}'),
 }
@@ -109,20 +113,7 @@ PY
 
 mkdir -p "${OUT_DIR}"
 AAR_PATH="${OUT_DIR}/fretboard-engine-${ARTIFACT_VERSION}.aar"
-# Pack with Python's zipfile: the environment has no `zip` binary, and a sorted
-# entry order keeps the archive reproducible for the same inputs.
-python3 - "${WORK}/aar" "${AAR_PATH}" <<'PACK'
-import os, sys, zipfile
-root, target = sys.argv[1], sys.argv[2]
-entries = []
-for directory, _, files in os.walk(root):
-    for name in files:
-        path = os.path.join(directory, name)
-        entries.append((os.path.relpath(path, root), path))
-with zipfile.ZipFile(target, "w", zipfile.ZIP_DEFLATED) as archive:
-    for relative, path in sorted(entries):
-        archive.write(path, relative)
-PACK
+python3 "${REPO_ROOT}/scripts/package_zip.py" "${WORK}/aar" "${AAR_PATH}"
 cp "${WORK}/aar/META-INF/fretboard-engine/metadata.json" "${OUT_DIR}/artifact-manifest.json"
 
 echo "==> checking the artifact"

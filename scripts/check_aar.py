@@ -13,8 +13,8 @@ The artifact carries a copy of the published metadata at
 the artifact *bytes* and not only against the filename. The ten frozen metadata
 fields are listed in ``FROZEN_FIELDS`` below and must agree everywhere.
 
-The checker is manifest-driven: it validates the *shape* of ``api_version`` and
-that the sidecar and the embedded copy agree, but the frozen revision itself
+The checker requires the published ABI set and validates that the sidecar,
+embedded metadata, and archive layout agree. The frozen API revision itself
 (currently 8, ``fixtures/contract/api-v8.json``) is the caller's value, read by
 ``scripts/build_aar.sh`` from the contract and pinned in the test suite.
 """
@@ -29,6 +29,14 @@ import zipfile
 
 # The generated binding package, frozen with the adapter API (uniffi.toml).
 BINDING_PACKAGE = "dev.ironjanowar.fretboard.core"
+
+# The native architectures carried by every published artifact.
+SHIPPED_ABIS = ["arm64-v8a", "x86_64"]
+
+ELF_MACHINES = {
+    "arm64-v8a": ("EM_AARCH64", 183),
+    "x86_64": ("EM_X86_64", 62),
+}
 
 # The native library the engine crate produces (cdylib name in Cargo.toml).
 NATIVE_LIBRARY = "libfretboard_mobile_ffi.so"
@@ -156,6 +164,8 @@ def check_field_types(document, report: Report, what: str) -> None:
         report.reject(f"{what} abis must carry non-empty ABI names")
     elif len(set(abis)) != len(abis):
         report.reject(f"{what} abis must not repeat an ABI")
+    elif abis != SHIPPED_ABIS:
+        report.reject(f"{what} abis must be exactly {SHIPPED_ABIS!r}, got {abis!r}")
 
     licenses = document.get("licenses")
     if not isinstance(licenses, list) or not licenses:
@@ -176,6 +186,47 @@ def compare_documents(manifest, embedded, report: Report) -> None:
             )
 
 
+def duplicate_names(names):
+    """Return sorted ZIP member names that occur more than once."""
+    seen = set()
+    duplicates = set()
+    for name in names:
+        if name in seen:
+            duplicates.add(name)
+        seen.add(name)
+    return sorted(duplicates)
+
+
+def check_elf_header(data: bytes, path: str, abi: str, report: Report) -> None:
+    """Check the ELF identity, object type, and machine for one native library."""
+    if len(data) < 64:
+        report.reject(f"{path} has a truncated ELF header ({len(data)} bytes)")
+        return
+    if data[:4] != b"\x7fELF":
+        report.reject(f"{path} is not an ELF file")
+        return
+    if data[4] != 2:
+        report.reject(f"{path} must be ELF64 (EI_CLASS 2), got {data[4]}")
+        return
+    if data[5] != 1:
+        report.reject(f"{path} must be little-endian (EI_DATA 1), got {data[5]}")
+        return
+    object_type = int.from_bytes(data[16:18], "little")
+    if object_type != 3:
+        report.reject(f"{path} must be a shared object (ET_DYN), got e_type {object_type}")
+        return
+
+    machine_spec = ELF_MACHINES.get(abi)
+    if machine_spec is None:
+        return
+    machine_name, machine = machine_spec
+    actual = int.from_bytes(data[18:20], "little")
+    if actual != machine:
+        report.reject(
+            f"{path} must use {machine_name} ({machine}) for {abi}, got e_machine {actual}"
+        )
+
+
 def check_native_libraries(archive, names, abis, report: Report) -> None:
     """Check the ``jni/<abi>/`` layout against the declared ABI set."""
     declared = set(abis)
@@ -193,9 +244,14 @@ def check_native_libraries(archive, names, abis, report: Report) -> None:
                 f"the declared ABI {abi!r} has no jni/{abi}/{NATIVE_LIBRARY}"
             )
         for library in libraries:
+            path = f"jni/{abi}/{library}"
+            try:
+                check_elf_header(archive.read(path), path, abi, report)
+            except (KeyError, OSError, RuntimeError, zipfile.BadZipFile) as error:
+                report.reject(f"{path} cannot be read: {error}")
             if library != NATIVE_LIBRARY:
                 report.reject(
-                    f"unexpected native library jni/{abi}/{library}; the engine "
+                    f"unexpected native library {path}; the engine "
                     f"artifact carries only {NATIVE_LIBRARY}"
                 )
 
@@ -270,6 +326,11 @@ def check_artifact(path: str, manifest_path: str) -> int:
 
     with archive:
         names = archive.namelist()
+        duplicates = duplicate_names(names)
+        if duplicates:
+            for name in duplicates:
+                report.reject(f"the artifact has duplicate ZIP member path {name!r}")
+            return report.emit()
 
         if EMBEDDED_METADATA_PATH not in names:
             report.reject(

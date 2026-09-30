@@ -5,7 +5,8 @@ actually observed in the build environment, plus the official source that makes
 it compatible. Nothing here is inferred from a device brand, a blog post or a
 release announcement alone.
 
-Environment inspected: Linux 6.18 (x86_64), 16 cores, no `sudo`, no `/dev/kvm`.
+Environment inspected: Linux 6.18 (x86_64), 16 cores, no `sudo`; `/dev/kvm`
+is exposed to the sandbox for hardware-accelerated emulator testing.
 
 ## Verified in this environment
 
@@ -26,7 +27,7 @@ Environment inspected: Linux 6.18 (x86_64), 16 cores, no `sudo`, no `/dev/kvm`.
 | compileSdk / targetSdk | `37` (platform package `platforms/android-37.0`) | highest stable platform offered by the SDK CLI; AGP 9.4 supports up to API 37 |
 | minSdk | `29` | User decision 2026-09-28 (DEC-10): Android 10 floor, chosen over the plan's proposal of 26 |
 | cargo-ndk | `4.1.2` | `cargo install cargo-ndk --locked`; drives the cross build against the pinned NDK (`ANDROID_HOME=/workspace/tools/android-sdk`) |
-| ABIs | `arm64-v8a` only | User decision 2026-09-28: emulator evidence is out of scope here, so `x86_64` is no longer required; the phone's ABI is confirmed by the app itself (see below) |
+| ABIs | `arm64-v8a`, `x86_64` | Both ABIs must ship in the published AAR: `arm64-v8a` supports the phone and `x86_64` supports API 37 emulator testing |
 
 Official compatibility sources used for the pins:
 
@@ -52,9 +53,7 @@ Official compatibility sources used for the pins:
 
 | Limitation | Consequence | Status |
 |---|---|---|
-| `/dev/kvm` is absent; the Android emulator cannot be hardware accelerated | No emulator run is possible on this machine | **Resolved by decision 2026-09-28:** evidence comes from the real phone only, and the missing emulator coverage is a disclosed limitation of every phase gate |
-| No `adb` device is attached to this environment | Automatic install, update and `getprop` collection are impossible here | **Resolved by decision 2026-09-28:** the user is not an Android developer and does not want an adb/device-tooling workflow. Every phase publishes a signed APK that he installs by hand, and the app itself surfaces its `Build.VERSION.SDK_INT` and `Build.SUPPORTED_ABIS` on screen so the required device facts travel with a screenshot instead of a command |
-| `x86_64` ABI no longer required | The engine AAR ships `arm64-v8a` only, which also removes a whole class of emulator-only packaging work | Consequence of the decision above |
+| No physical `adb` device is attached to this environment | Physical-device evidence still comes from the user's installed APK | An API 37 `x86_64` AVD is available for automated install, instrumentation and UI inspection; the user validates release APKs on the real phone |
 | `sudo` is unavailable | No system-level tool installation | Everything above was installed in user space; nothing needs root |
 | Android SDK licenses were accepted non-interactively (`sdkmanager --licenses`) as part of this bootstrap | Licenses for `platform-tools`, `platforms;android-37`, `build-tools;36.0.0`, `ndk;28.2.13676358` are accepted on this machine | Disclosed; the acceptance log is local, not committed |
 
