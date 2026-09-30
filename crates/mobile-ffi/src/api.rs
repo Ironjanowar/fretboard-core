@@ -600,6 +600,28 @@ pub fn encode_snapshot(state: PageStateDto) -> Result<String, AdapterError> {
     fretboard_core::encode_snapshot(&domain).map_err(AdapterError::from)
 }
 
+/// Encode one page as the query string that reproduces it (task `A20`'s core half).
+///
+/// The emitting direction of the legacy codec: the page becomes the parameters that
+/// reproduce it (defaults omitted, invalid fields dropped — the domain's own
+/// `encode_page_params`, pinned by the oracle's 104 cases) and those become a query
+/// string with the spelling the frozen transport accepts (`#` as `%23` because a raw one
+/// ends the query, a space as `+`, `,` literal).
+///
+/// **No base and no leading `?`.** The approved production origin does not exist yet
+/// (`DEC-07`) and this never guesses one: the caller appends the query to the origin it
+/// has been told to use, and while there is none, sharing stays off with an explanation
+/// instead of emitting a link that pretends to work.
+///
+/// # Errors
+/// [`AdapterError`] when the page cannot be read as a state at all; no musical value is
+/// decided here.
+#[uniffi::export]
+pub fn encode_page_query(state: PageStateDto) -> Result<String, AdapterError> {
+    let domain = page_state_from_dto(&state)?;
+    Ok(fretboard_core::encode_page_query(&domain))
+}
+
 /// Decode one snapshot string into a page (task `C21`).
 ///
 /// The domain envelope codec reads the version first and refuses a version this
